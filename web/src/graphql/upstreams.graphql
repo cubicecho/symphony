@@ -1,0 +1,52 @@
+fragment UpstreamFields on Upstream {
+  id
+  name
+  url
+  proxyPath
+  headers {
+    name
+    value
+  }
+  schema {
+    typeCount
+    fetchedAt
+    hash
+  }
+}
+
+query Upstreams {
+  upstreams {
+    ...UpstreamFields
+  }
+}
+
+query UpstreamSchema($id: ID!) {
+  upstream(id: $id) {
+    id
+    schema {
+      sdl
+    }
+  }
+}
+
+mutation AddUpstream($input: AddUpstreamInput!) {
+  addUpstream(input: $input) {
+    ...UpstreamFields
+  }
+}
+
+mutation UpdateUpstream($input: UpdateUpstreamInput!) {
+  updateUpstream(input: $input) {
+    ...UpstreamFields
+  }
+}
+
+mutation DeleteUpstream($id: ID!) {
+  deleteUpstream(id: $id)
+}
+
+mutation RefreshSchema($id: ID!) {
+  refreshSchema(id: $id) {
+    ...UpstreamFields
+  }
+}

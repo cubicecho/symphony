@@ -1,0 +1,1018 @@
+{
+  "items": [
+    {
+      "name": "tokens",
+      "title": "Tokens",
+      "description": "The palette as a Tailwind stylesheet, emitted from the same source as the native one so the two cannot drift.",
+      "files": [
+        "tokens.web",
+        "cube-rn-reset"
+      ]
+    },
+    {
+      "name": "utils",
+      "title": "cn",
+      "description": "The class merger every component calls, the hover and focus classes that have to be gated on platform, and the `webAs` declaration the RN→web compiler reads.",
+      "files": [
+        "utils"
+      ]
+    },
+    {
+      "name": "color",
+      "title": "Color Helpers",
+      "description": "Derives an accent that shows on light and dark cards from a user-chosen hex colour.",
+      "files": [
+        "color"
+      ]
+    },
+    {
+      "name": "readable-text-color",
+      "title": "Readable Text Color",
+      "description": "Picks black or white ink for text sitting on a colour the user chose, by WCAG contrast.",
+      "files": [
+        "readable-text-color"
+      ]
+    },
+    {
+      "name": "format",
+      "title": "Format",
+      "description": "How a count, a size in bytes, a duration and a date are written for a reader, and how a row of them is joined: formatCount, formatBytes, formatDuration, formatDate, formatDateTime, formatAgo and joinStats, on Intl with no dependency.",
+      "files": [
+        "format"
+      ]
+    },
+    {
+      "name": "bottom-bar",
+      "title": "Bottom bar",
+      "description": "Whether a layout draws a bar along the bottom of the screen, and under which width: useReportBottomBar for the layout that draws it, useBottomBar for what floats at the bottom (a toast) to sit above it.",
+      "files": [
+        "bottom-bar"
+      ]
+    },
+    {
+      "name": "frame-focus-guard",
+      "title": "Frame focus guard",
+      "description": "Keeps a framed page from taking focus out of an open menu, dialog, popover or select: frames go inert while an overlay is open, and a window blur that only moved focus into one is stopped and focus put back. Held by those overlays' web halves; web only.",
+      "files": [
+        "frame-focus-guard"
+      ]
+    },
+    {
+      "name": "error-message",
+      "title": "Error messages",
+      "description": "The words an error is shown in: `messageOf`, the text a validator's error shows, which the form bindings read a field's first error with; and `describeError`, a failed request or a thrown value as one line worth reading, which `LoadError` and `ErrorPage` say under their heading.",
+      "files": [
+        "error-message"
+      ]
+    },
+    {
+      "name": "form-binding",
+      "title": "Form binding",
+      "description": "The types a control bound to a TanStack form field takes — the form, a checked field name, validators and listeners — and the one loosely typed view of `form.Field` that renders it. What the form items and RadioGroupField bind through.",
+      "files": [
+        "form-binding"
+      ]
+    },
+    {
+      "name": "number-draft",
+      "title": "Number draft",
+      "description": "What a number box holds while it is typed in: `parseNumber`, which reads `\"\"`, `-` and `1e` as no number yet and never as `0` or `NaN`, and `numberText`, which draws the typed text while it still means the stored number. What the two form bindings' NumberField share.",
+      "files": [
+        "number-draft"
+      ]
+    },
+    {
+      "name": "roving-focus",
+      "title": "Roving focus",
+      "description": "One tab stop for a set of options, with the arrow keys, Home and End moving between them: ARIA's roving tab stop, as RadioGroup, ColorPicker's swatches and the device half of Tabs share it. A hook, `useRovingFocus`, and `useRovingItem` for each option. Not a component.",
+      "files": [
+        "roving-focus"
+      ]
+    },
+    {
+      "name": "select-options",
+      "title": "Select options",
+      "description": "What a select's options list holds — options, a group heading on each, separators and notes — and the walk that turns the list into the runs a menu draws. What Combobox and the form's SelectField read one list through, with the helpers for a held value no option covers and for a typed name worth creating. Not a component.",
+      "files": [
+        "select-options"
+      ]
+    },
+    {
+      "name": "icons",
+      "title": "Icons",
+      "description": "The icon set, per-icon imports on native and a tree-shaken barrel on web, with the context that gives native icons a colour to inherit.",
+      "files": [
+        "icons-base",
+        "icons"
+      ]
+    },
+    {
+      "name": "button",
+      "title": "Button",
+      "description": "A Pressable-backed button whose variants split into container and text halves, because native inherits no text colour. An `icon*` size requires an `aria-label`; a `hint` is its tooltip, and with one, `disabled` is `aria-disabled`, so the reason is still reachable.",
+      "files": [
+        "button"
+      ]
+    },
+    {
+      "name": "card",
+      "title": "Card",
+      "description": "A card with typed text slots, an optional accent bar, and a whole-card press target that stays reachable by keyboard.",
+      "files": [
+        "card"
+      ]
+    },
+    {
+      "name": "alert",
+      "title": "Alert",
+      "description": "A callout: a tinted, bordered box with an icon, a title, a line under it and an optional action. `default`, `info`, `warning` or `destructive`; only `destructive` is announced as an `alert`, the rest as a polite `status`.",
+      "files": [
+        "alert"
+      ]
+    },
+    {
+      "name": "empty",
+      "title": "Empty",
+      "description": "shadcn's `Empty` parts on both halves: the muted icon bubble, the title, the line under it and what to do about it. The one-line shell built on them is `EmptyState`, in `@cubeui/empty-state`; write that in new code.",
+      "files": [
+        "empty"
+      ]
+    },
+    {
+      "name": "checkbox",
+      "title": "Checkbox",
+      "description": "Radix on web, with its whole prop surface; a Pressable announced through role and aria-checked on device. Controlled or uncontrolled on both.",
+      "files": [
+        "checkbox-base",
+        "checkbox"
+      ]
+    },
+    {
+      "name": "code",
+      "title": "Code",
+      "description": "Monospaced text: Code, the inline span, and CodeBlock, a bordered block of preformatted text with an action slot for a CopyButton, an optional title (and language) in a header row, a wrap prop to wrap long lines instead of scrolling sideways, a maxHeight that scrolls, and follow to keep a growing log at its end.",
+      "files": [
+        "code"
+      ]
+    },
+    {
+      "name": "color-bar",
+      "title": "Color Bar",
+      "description": "The left-edge accent stripe a card wears, readable in both themes and labelled for anyone who cannot see it.",
+      "files": [
+        "color-bar"
+      ]
+    },
+    {
+      "name": "color-dot",
+      "title": "Color Dot",
+      "description": "A small swatch standing in for a colour-coded thing in a list, readable in both themes.",
+      "files": [
+        "color-dot"
+      ]
+    },
+    {
+      "name": "input",
+      "title": "Input",
+      "description": "Single-line text entry, with an optional icon at its start (`leadingSlot`) or an icon-sized control at its end (`trailingSlot`). Keeps a real DOM input on web so time, number and min/max survive; a TextInput on device.",
+      "files": [
+        "input-base",
+        "input"
+      ]
+    },
+    {
+      "name": "search-input",
+      "title": "Search input",
+      "description": "A search box: Input with a Search icon inside at its start, type=search (a searchbox), named by `label` (default Search), and a named clear button while it holds text.",
+      "files": [
+        "search-input-base",
+        "search-input"
+      ]
+    },
+    {
+      "name": "password-input",
+      "title": "Password Input",
+      "description": "A password box with a reveal button that is named, changes its name, and does not submit the form: Input with type=password (secureTextEntry on device) and a show/hide button in its trailing slot.",
+      "files": [
+        "password-input"
+      ]
+    },
+    {
+      "name": "label",
+      "title": "Label",
+      "description": "A caption for a control. Radix on web so clicking it focuses the control; plain text on native, where that association does not exist.",
+      "files": [
+        "label-base",
+        "label"
+      ]
+    },
+    {
+      "name": "textarea",
+      "title": "Textarea",
+      "description": "Multi-line text entry. Keeps a real DOM textarea on web; a multiline TextInput on device. Takes a submit key, a ref, and maxRows to grow with its text.",
+      "files": [
+        "textarea-base",
+        "textarea"
+      ]
+    },
+    {
+      "name": "dialog",
+      "title": "Dialog",
+      "description": "A modal. Radix on web with its focus trap and scroll lock; a transparent native Modal with a dimmed backdrop and a centred card.",
+      "files": [
+        "dialog-base",
+        "dialog"
+      ]
+    },
+    {
+      "name": "popover",
+      "title": "Popover",
+      "description": "Radix anchored to its trigger on web; a centred native sheet on device, because anchoring is a pointer-era affordance.",
+      "files": [
+        "popover-base",
+        "popover"
+      ]
+    },
+    {
+      "name": "description-hint",
+      "title": "Description Hint",
+      "description": "A description folded behind a small button beside its title: the button and pane, both named `About <label>`, and the off-screen copy `aria-describedby` still reaches on the web. What `descriptionPlacement=\"popover\"` draws on the bound fields, `CardLayout`, `Section` and `SettingRow`.",
+      "files": [
+        "description-hint"
+      ]
+    },
+    {
+      "name": "menu",
+      "title": "Menu",
+      "description": "A popover of actions: radix DropdownMenu on web (arrow keys, typeahead, focus back on the trigger); the popover's centred sheet with menu and menuitem roles on device. A row takes an icon, a label, a trailing node and a destructive colour, and the menu closes when one is chosen. Checkbox rows toggle and keep the menu open; radio rows in a group choose one and close it.",
+      "files": [
+        "menu-base",
+        "menu"
+      ]
+    },
+    {
+      "name": "command",
+      "title": "Command",
+      "description": "A searchable list of choices: shadcn's Command parts over cmdk on web (arrow keys, Enter, fuzzy ranking); on device a search Input over pressable rows, filtered on every typed word, chosen by press. The same part names and the props Combobox uses on both.",
+      "files": [
+        "command-base",
+        "command"
+      ]
+    },
+    {
+      "name": "select",
+      "title": "Select",
+      "description": "A radix listbox under its trigger on web; the options in a Modal sheet on device, which is what every native platform does.",
+      "files": [
+        "select-base",
+        "select"
+      ]
+    },
+    {
+      "name": "switch",
+      "title": "Switch",
+      "description": "Radix on web; a Pressable track with a moving thumb on device, rather than RN's Switch, whose raw colour props would not follow the theme.",
+      "files": [
+        "switch-base",
+        "switch"
+      ]
+    },
+    {
+      "name": "tabs",
+      "title": "Tabs",
+      "description": "Radix on web; a row of Pressables over a context on device. Controlled (value/onValueChange) or uncontrolled (defaultValue) on both. A trigger can carry an icon beside its label, in the tab's active or inactive colour, and a dot or a count at its far end as `trailingSlot`. A list with more tabs than fit scrolls sideways and keeps the selected tab in view.",
+      "files": [
+        "tabs-base",
+        "tabs"
+      ]
+    },
+    {
+      "name": "tooltip",
+      "title": "Tooltip",
+      "description": "Radix on hover and focus on web; long-press on device, which is the platform's own way to ask what a control does.",
+      "files": [
+        "tooltip-base",
+        "tooltip"
+      ]
+    },
+    {
+      "name": "radio-group",
+      "title": "Radio Group",
+      "description": "An exclusive choice, one source for both platforms: `row` (circle, label, description), `card` (a tile with an icon) or `segmented` (a full-width framed row, icon-only segments allowed), with one tab stop and arrow keys that move and select handled inside.",
+      "files": [
+        "radio-group"
+      ]
+    },
+    {
+      "name": "radio-group-field",
+      "title": "Radio Group Field",
+      "description": "A set of exclusive choices bound to a TanStack form field, the options on the page and each able to carry a line saying what it means. The group is named by its title through aria-labelledby.",
+      "files": [
+        "radio-group-field"
+      ]
+    },
+    {
+      "name": "combobox",
+      "title": "Combobox",
+      "description": "A choice from a list of options, one value or several with `multiple`, with groups, separators and notes, and the id and aria props landing on the trigger. One value is radix's listbox on the web and the Select sheet on device; `searchable` and `multiple` draw a Popover over a Command, searchable on every word, with an optional create row and, for several, coloured chips.",
+      "files": [
+        "combobox"
+      ]
+    },
+    {
+      "name": "theme-picker",
+      "title": "Theme Picker",
+      "description": "Light, Dark and System as radio tiles, or with variant=\"compact\" as a full-width row of icon-only radios for a sidebar or header, and useThemePreference(), which stores the choice and applies it: a class on <html> on the web, Appearance.setColorScheme on device, where the app passes its own storage. With palettes={PALETTE_PREFERENCES} it adds a palette choice beside the theme (default, or the dark-only monokai), stored by usePalettePreference() and applied as data-palette on <html> on the web and by PaletteProvider on device. THEME_PRE_PAINT_SCRIPT is the inline <script> that paints the stored theme and palette before React mounts.",
+      "files": [
+        "theme-preference-base",
+        "theme-preference",
+        "theme-picker"
+      ]
+    },
+    {
+      "name": "section",
+      "title": "Section",
+      "description": "A heading over a group of fields or rows: title, description, an action at the far end and an optional rule. The title is a heading of rank `level` (2 by default), so a long settings page is navigable. `descriptionPlacement=\"popover\"` folds the description behind a button beside the title.",
+      "files": [
+        "section"
+      ]
+    },
+    {
+      "name": "list-item",
+      "title": "List Item",
+      "description": "One row of a list: `leadingSlot` (an avatar, a checkbox), a truncating `title` over a `description`, `meta` and `actionSlot` at the far end. With `onPress` the middle is one button and `leadingSlot` and `actionSlot` stay separate controls beside it, never nested in it. Built from `Item`'s parts at `size=\"sm\"`.",
+      "files": [
+        "list-item"
+      ]
+    },
+    {
+      "name": "list",
+      "title": "List",
+      "description": "The list a row sits in: a `<ul>` (list and listitem roles on device) that wraps each element of `contentSlot` in its own cell, with a `label` for its accessible name, a rule between rows (`divided`, on by default) and the padding around each row. Holds `ListItem`s, `DisclosureRow`s or rows of your own.",
+      "files": [
+        "list"
+      ]
+    },
+    {
+      "name": "tree",
+      "title": "buildTree",
+      "description": "Nests a flat list of `/` paths into folders and files: a parent the list leaves out is added, and every level is sorted folders first and then by name. Each node keeps the entry it was built from, so a size or a count rides along. What `FileTree` draws.",
+      "files": [
+        "tree"
+      ]
+    },
+    {
+      "name": "file-tree",
+      "title": "File Tree",
+      "description": "A nested list of files and folders from a flat list of paths. A folder is a button that folds what is under it; a file is a router link (`linkSlot`) or a button (`onSelect`), tinted when it is `selected`. `meta` puts a size or a badge after a name, `actionSlot` puts rename and delete beside the row rather than inside it, `pinned` keeps a file above the tree, and `onMove` lets a row be dragged onto a folder in a browser.",
+      "files": [
+        "file-tree"
+      ]
+    },
+    {
+      "name": "collapsible",
+      "title": "Collapsible",
+      "description": "A titled part of a screen whose body shows and hides: \"Show completed (3)\", \"Raw output\". The header is one button with a turning chevron and `aria-expanded`, an optional `actionSlot` sits beside it rather than inside it, and `contentSlot` is mounted only while open. Uncontrolled with `defaultOpen`, or controlled with `open`/`onOpenChange`.",
+      "files": [
+        "collapsible"
+      ]
+    },
+    {
+      "name": "disclosure",
+      "title": "Disclosure (deprecated)",
+      "description": "The old name of collapsible, kept for one release: Disclosure and DisclosureTrigger, re-exported from it. Install collapsible.",
+      "files": [
+        "disclosure"
+      ]
+    },
+    {
+      "name": "collapsible-row",
+      "title": "Collapsible Row",
+      "description": "A list row that opens: a `ListItem` whose whole heading is `Collapsible`'s button (`aria-expanded`, a turning chevron), with the actions outside it and `contentSlot` under it, mounted only while open. The same box and words as the `ListItem` rows beside it, and no surface of its own. Controlled with `open`/`onOpenChange`.",
+      "files": [
+        "collapsible-row"
+      ]
+    },
+    {
+      "name": "disclosure-row",
+      "title": "Disclosure Row (deprecated)",
+      "description": "The old name of collapsible-row, kept for one release: DisclosureRow, re-exported from it. Install collapsible-row.",
+      "files": [
+        "disclosure-row"
+      ]
+    },
+    {
+      "name": "property-list",
+      "title": "Property List",
+      "description": "Read-only facts: `PropertyList` over `PropertyRow`s, each a label, a value, an optional hint under the value and an optional action beside it. A `<dl>` of `<dt>`/`<dd>` groups on the web, `role=\"list\"` on device; `layout=\"inline\"` puts labels beside values and wraps to stacked when narrow.",
+      "files": [
+        "property-list"
+      ]
+    },
+    {
+      "name": "description-list",
+      "title": "Description List (deprecated)",
+      "description": "The old name of property-list, kept for one release: DescriptionList and PropertyRow, re-exported from it. Install property-list.",
+      "files": [
+        "description-list"
+      ]
+    },
+    {
+      "name": "setting-row",
+      "title": "Setting Row",
+      "description": "One row of a settings page: a `title` and `description` at the start, the control that changes it in `actionSlot` at the end, dropping under the text when the row is too narrow for both. `actionSlot` may be a function handed the title's id, so a switch or select is named by the title through `aria-labelledby`. `descriptionPlacement=\"popover\"` folds the description behind a button beside the title.",
+      "files": [
+        "setting-row"
+      ]
+    },
+    {
+      "name": "stat-tile",
+      "title": "Stat Tile",
+      "description": "One number on a card: a `label`, a large tabular `value`, an optional `hint` under it and an `iconSlot` before the label. Given `onPress` the tile is a button, and with `selected` a toggle (`aria-pressed`) for the filter tile over a list. `loading` holds the figure's place.",
+      "files": [
+        "stat-tile"
+      ]
+    },
+    {
+      "name": "confirm-button",
+      "title": "Confirm Button",
+      "description": "A destructive button that asks first, with a required description of what is lost: a `Button` that opens `ConfirmDialog`, with `requireText` to ask for the name before a big delete.",
+      "files": [
+        "confirm-button"
+      ]
+    },
+    {
+      "name": "section-heading",
+      "title": "Section Heading",
+      "description": "The small muted heading above a section of content, with an optional heading `level`.",
+      "files": [
+        "section-heading"
+      ]
+    },
+    {
+      "name": "segmented",
+      "title": "Segmented",
+      "description": "A segmented control: the pill, with an optional icon before its label; the named row it sits in, which can hold the current value and drop the labels to icons under a width; and the two class helpers a router link needs instead.",
+      "files": [
+        "segmented"
+      ]
+    },
+    {
+      "name": "toggle-chip",
+      "title": "Toggle Chip",
+      "description": "A small on/off pill — a filter chip, a day toggle, a swatch — with its colour split across container and label.",
+      "files": [
+        "toggle-chip"
+      ]
+    },
+    {
+      "name": "progress",
+      "title": "Progress",
+      "description": "A horizontal bar showing how much of something is done: `role=\"progressbar\"` with its value announced, `value` from 0 to `max` (100 by default) as shadcn's, clamped. `label` names it; `valueLabel` reads the value in words. With no value, a third of the track sweeps across it, and holds still in the middle under reduced motion.",
+      "files": [
+        "progress-base",
+        "progress"
+      ]
+    },
+    {
+      "name": "skeleton",
+      "title": "Skeleton",
+      "description": "shadcn's loading placeholder: a rounded `bg-accent` block the caller sizes, pulsing on both halves (`animate-pulse` on the web, the same opacity curve in `Animated` on device), and still when the reader's system asks for reduced motion.",
+      "files": [
+        "skeleton-base",
+        "skeleton"
+      ]
+    },
+    {
+      "name": "separator",
+      "title": "Separator",
+      "description": "shadcn's one-pixel rule, `orientation` and `decorative` as shadcn's: hidden from assistive tech by default, a `role=\"separator\"` with `decorative={false}`.",
+      "files": [
+        "separator"
+      ]
+    },
+    {
+      "name": "badge",
+      "title": "Badge",
+      "description": "A pill naming what something is or what state it is in — and, with no label, the dot that says the same thing in a tighter row. `onRemove` adds a trailing ✕ for a tag the user can take off.",
+      "files": [
+        "badge-base",
+        "badge"
+      ]
+    },
+    {
+      "name": "copy-button",
+      "title": "Copy button",
+      "description": "An icon button that copies `value` to the clipboard and turns into a tick for a moment, named `Copy` (or `label`, or `Copy {title}` inside a titled CodeBlock) and then `Copied`.",
+      "files": [
+        "copy-button-base",
+        "copy-button-view",
+        "copy-button"
+      ]
+    },
+    {
+      "name": "download-button",
+      "title": "Download button",
+      "description": "An icon button that saves `source` as a file named `filename`, disabled with a spinner while a fetched `source` is pending, and `downloadBlob()`, the function it calls. The browser's own download on the web; on device the share sheet or a folder the person picks, chosen by `destination` or, by default, from a menu on the button.",
+      "files": [
+        "download-button-base",
+        "download-button"
+      ]
+    },
+    {
+      "name": "overlay",
+      "title": "Overlay",
+      "description": "Where a tooltip or a toast is drawn on device: a layer over the app (OverlayHost, which ToastProvider draws) and one inside each Modal (OverlayLayer, which the dialog, popover, menu and select draw), so a ScrollView does not clip it and an open dialog does not cover it. Nothing on the web draws one: radix portals to <body> there.",
+      "files": [
+        "overlay"
+      ]
+    },
+    {
+      "name": "reduced-motion",
+      "title": "Reduced Motion",
+      "description": "useReducedMotion(): whether the reader's system asks for reduced motion, kept up to date as they change it. The `prefers-reduced-motion` media query on the web, AccessibilityInfo on device, where NativeWind's `motion-safe:` and `motion-reduce:` never match. For an animation written in script; the components already honour it.",
+      "files": [
+        "reduced-motion"
+      ]
+    },
+    {
+      "name": "surface-colors",
+      "title": "Surface Colors",
+      "description": "useSurfaceColors(): the page and card colours of the theme a node is drawn in, as hex, read from the --background and --secondary it resolves: off its computed style on the web, through NativeWind on device. ColorBar and ColorDot hand them to hexToAccent, so a picked colour moves only as far as that theme needs.",
+      "files": [
+        "surface-colors"
+      ]
+    },
+    {
+      "name": "overflows",
+      "title": "Overflows",
+      "description": "useOverflows(): whether a box that scrolls has anything to scroll, so it is a tab stop only while it does, and the width its scrollbar takes as `--scrollbar-width`. Measured on the web; on device, which has no tab stops, always false. Table's container, HeaderContentFooter's body and a stacked SplitLayout hold it.",
+      "files": [
+        "overflows"
+      ]
+    },
+    {
+      "name": "spinner",
+      "title": "Spinner",
+      "description": "A loading indicator: the LoaderCircle glyph turning, one `role=\"status\"` named by `label`, sized and coloured by `className`.",
+      "files": [
+        "spinner-base",
+        "spinner"
+      ]
+    },
+    {
+      "name": "item",
+      "title": "Item",
+      "description": "shadcn's list-row parts — `Item`, `ItemMedia`, `ItemContent`, `ItemTitle`, `ItemDescription`, `ItemActions`, `ItemHeader`, `ItemFooter`, `ItemGroup`, `ItemSeparator` — on both halves, with shadcn's names and props. `size=\"default\"` is shadcn's row; `size=\"sm\"` is `ListItem`'s, which is built from these parts. For a row `ListItem` does not fit: a header or footer line, a badge beside the title.",
+      "files": [
+        "item-base",
+        "item"
+      ]
+    },
+    {
+      "name": "field",
+      "title": "Field",
+      "description": "Label, description and error chrome around a control. The unbound half of the form set.",
+      "files": [
+        "field"
+      ]
+    },
+    {
+      "name": "switch-field",
+      "title": "Switch Field",
+      "description": "A switch and its caption on one row, with the whole row in the hit target on both platforms.",
+      "files": [
+        "switch-field-base",
+        "switch-field"
+      ]
+    },
+    {
+      "name": "alert-dialog",
+      "title": "Alert Dialog",
+      "description": "shadcn's modal that interrupts to ask, with the same part names on both halves: radix's `AlertDialog` on the web, the native `Dialog` as an `alertdialog` with no close button on device.",
+      "files": [
+        "alert-dialog"
+      ]
+    },
+    {
+      "name": "unsaved-changes-guard",
+      "title": "Unsaved changes guard",
+      "description": "useUnsavedChangesGuard() and UnsavedChangesDialog: one question for the three ways out of a page with unsaved edits. It takes the app's router blocker as it comes (TanStack Router's or React Router's, with no router imported), guards the page's own Close button through leave(), and holds a beforeunload listener on the web while there are changes.",
+      "files": [
+        "unsaved-changes-guard"
+      ]
+    },
+    {
+      "name": "confirm-dialog",
+      "title": "Confirm Dialog",
+      "description": "A destructive-action confirmation dialog: Cancel plus one destructive button.",
+      "files": [
+        "confirm-dialog"
+      ]
+    },
+    {
+      "name": "confirm",
+      "title": "Confirm",
+      "description": "One confirmation prompt for both platforms, as a promise: `if (await confirm({…})) remove()`.",
+      "files": [
+        "confirm"
+      ]
+    },
+    {
+      "name": "form-element",
+      "title": "Form Element",
+      "description": "A real `<form>` on web so Enter submits; a `View` on native, where nothing raises a submit event.",
+      "files": [
+        "form-element-base",
+        "form-element"
+      ]
+    },
+    {
+      "name": "form",
+      "title": "Form",
+      "description": "Fields bound to TanStack Form: label, control and error wired once, for both platforms. `useAppForm`, the text, number, password, select, checkbox and switch fields, `SubmitButton`, and `bindToForm` for the rest. Every bound field takes `descriptionPlacement=\"popover\"`, which folds the description behind a button beside the label.",
+      "files": [
+        "form"
+      ]
+    },
+    {
+      "name": "toast",
+      "title": "Toast",
+      "description": "Transient messages for mutations fired outside a form — the failures that otherwise reach only the console.",
+      "files": [
+        "toast",
+        "toast-announce"
+      ]
+    },
+    {
+      "name": "calendar",
+      "title": "Calendar",
+      "description": "A month of single-date selection: react-day-picker on web, a date-fns grid on device.",
+      "files": [
+        "calendar-base",
+        "calendar"
+      ]
+    },
+    {
+      "name": "date-time-input",
+      "title": "Date Time Input",
+      "description": "A date popover and a time field that commit one Date back — or, with `clearable mode=\"date\"`, an optional date only.",
+      "files": [
+        "date-time-input"
+      ]
+    },
+    {
+      "name": "date-picker",
+      "title": "Date Picker",
+      "description": "A date and optionally a time behind a popover, plus a range picker that closes when the range is complete. Clearing is a real button, not one nested in another.",
+      "files": [
+        "date-picker"
+      ]
+    },
+    {
+      "name": "color-picker",
+      "title": "Color Picker",
+      "description": "Swatches plus a hex field, replacing `<input type=\"color\">` — which has no native counterpart.",
+      "files": [
+        "color-picker"
+      ]
+    },
+    {
+      "name": "date-time-field",
+      "title": "Date Time Field",
+      "description": "`DateTimeInput` bound to a `Date | null` form field, named by its label and its date: \"Due September 15th, 2026\". Its own item for the weight of the calendar.",
+      "files": [
+        "date-time-field"
+      ]
+    },
+    {
+      "name": "color-picker-field",
+      "title": "Color Picker Field",
+      "description": "`ColorPicker` bound to a hex-string form field, its swatch row named by the field's label. `ColorField`, under an item name that does not collide with the web-only `color-field`.",
+      "files": [
+        "color-picker-field"
+      ]
+    },
+    {
+      "name": "combobox-field",
+      "title": "Combobox Field",
+      "description": "`Combobox` bound to a form field, for `createAppForm` or inside `form.AppField`: a string field, or a `string[]` one with `multiple`. The choice with a search box, a list that fills when it opens, a note in it, or several values. `ComboboxField`, kept out of `form` so a form of plain inputs does not install the popover and the command list.",
+      "files": [
+        "combobox-field"
+      ]
+    },
+    {
+      "name": "segmented-field",
+      "title": "Segmented Field",
+      "description": "A `SegmentedGroup` bound to a string form field: a few short choices as pills on the page, the row named by the field's label. For `createAppForm` or inside `form.AppField`.",
+      "files": [
+        "segmented-field"
+      ]
+    },
+    {
+      "name": "file-picker",
+      "title": "File Picker",
+      "description": "A drop zone, or a button, over a hidden file input on web. The native half is a placeholder, not an implementation.",
+      "files": [
+        "file-picker-base",
+        "file-picker"
+      ]
+    },
+    {
+      "name": "load-state",
+      "title": "Load State",
+      "description": "The three rungs a list of rows climbs before it is a list of rows — failed, pending, empty — or a detail screen before its record — failed, pending, not found — with the error card and the row placeholders exported on their own.",
+      "files": [
+        "load-state"
+      ]
+    },
+    {
+      "name": "query-state",
+      "title": "Query State (deprecated)",
+      "description": "The old name of load-state, kept for one release: QueryState, QueryError and RowSkeleton, re-exported from it. Install load-state.",
+      "files": [
+        "query-state"
+      ]
+    },
+    {
+      "name": "empty-state",
+      "title": "Empty State",
+      "description": "What an empty list says: the centred icon, title, description and action for a list that is the page, or at `compact` one muted line for a list inside a card, sidebar or popover. Built on `@cubeui/empty`'s parts.",
+      "files": [
+        "empty-state"
+      ]
+    },
+    {
+      "name": "grid-layout",
+      "title": "Grid Layout",
+      "description": "Equal cells in rows, one to four to a row by the window's width, for cards, tiles or anything of one kind.",
+      "files": [
+        "grid-layout"
+      ]
+    },
+    {
+      "name": "error-page",
+      "title": "Error Page",
+      "description": "What shows when the tree below a route has thrown, with nothing in it that could have been the cause. The whole error boundary in one element: `@cubeui/empty`'s block with a red bubble, a title, the line `describeError` gives, an optional copyable raw message (`details`) and extra buttons beside Try again (`actionSlot`).",
+      "files": [
+        "error-page"
+      ]
+    },
+    {
+      "name": "route-error",
+      "title": "Route Error (deprecated)",
+      "description": "The old name of error-page, kept for one release: RouteError, re-exported from it. Install error-page.",
+      "files": [
+        "route-error"
+      ]
+    },
+    {
+      "name": "header-content-footer",
+      "title": "Header / Content / Footer",
+      "description": "The page chassis: chrome that stays, a body that scrolls, floors that let it. Ships the sticky preset alongside the base.",
+      "files": [
+        "header-content-footer"
+      ]
+    },
+    {
+      "name": "page-header",
+      "title": "Page Header",
+      "description": "The title block a page wears in a header slot: an optional trail, an icon and title at a chosen heading level, a description, the page's buttons at the far end, and a search or filter row beneath. Carries the inset the page chassis leaves it.",
+      "files": [
+        "page-header"
+      ]
+    },
+    {
+      "name": "page-layout",
+      "title": "Page Layout",
+      "description": "A whole page: a PageHeader pinned above a body that scrolls under it, in a named column.",
+      "files": [
+        "page-layout"
+      ]
+    },
+    {
+      "name": "app-bar",
+      "title": "App Bar",
+      "description": "An app's bar across the top: brand at the start, its places in a named navigation landmark that scrolls sideways when narrow, one line of the app's state that gives way first, and actions at the end. The bar SidebarLayout draws on a phone, and the header of an app with no sidebar.",
+      "files": [
+        "app-bar"
+      ]
+    },
+    {
+      "name": "split-layout",
+      "title": "Split Layout",
+      "description": "Two panes side by side on a named width scale, with the floors that keep one wide child from pushing the other off the screen. Ships SidebarLayout, the preset for the common case where one pane is the screen and the other is beside it — and, with sidebarHideBelow, an AppBar (brand, nav, status, action) that stands in for a navigation rail on a narrow screen, with the nav along the bottom of the page under barPosition=\"bottom\".",
+      "files": [
+        "split-layout"
+      ]
+    },
+    {
+      "name": "sidebar",
+      "title": "Sidebar",
+      "description": "An app's sidebar: a header, a body that scrolls and a footer on the page colour behind a rule, at a fixed width, with an optional titled list of rows and the nav row itself — a link with an icon, a truncating label, a count and aria-current on the active page. Ships AppBarItem, the same place as an icon-only link for an app bar: a required name that is also its tooltip, the count as a badge on the icon and a status as a dot. A controlled collapsed state folds the sidebar to a rail of icons, with SidebarCollapseButton and useSidebar for what the app puts in it.",
+      "files": [
+        "sidebar"
+      ]
+    },
+    {
+      "name": "card-layout",
+      "title": "Card Layout",
+      "description": "A card with its slots already placed: icon, title, description, header action, body, and a footer split between prose and buttons. `descriptionPlacement=\"popover\"` folds the description behind a button after the title.",
+      "files": [
+        "card-layout"
+      ]
+    },
+    {
+      "name": "centered-card-layout",
+      "title": "Centered Card Layout",
+      "description": "A page that is one card, centred both ways: a sign-in, a token gate, a check-your-email screen. Full height, padded off the edges, a `max-w-sm` `CardLayout` taking every card slot; on device a scroll view that keeps the form above the keyboard.",
+      "files": [
+        "centered-card-layout"
+      ]
+    },
+    {
+      "name": "centered-layout",
+      "title": "Centered Layout (deprecated)",
+      "description": "The old name of centered-card-layout, kept for one release: CenteredLayout, re-exported from it. Install centered-card-layout.",
+      "files": [
+        "centered-layout"
+      ]
+    },
+    {
+      "name": "dialog-layout",
+      "title": "Dialog Layout",
+      "description": "A dialog whose body scrolls under a header that does not, and which asks before closing on unsaved work. Composes the header/content/footer chassis rather than owning a second copy.",
+      "files": [
+        "dialog-layout"
+      ]
+    },
+    {
+      "name": "app-form",
+      "title": "App Form",
+      "description": "The TanStack Form binding: useAppForm, plus one-element fields — InputField, NumberField, TextareaField, SelectField, ComboboxField, CheckboxField, SwitchField, PasswordField — that take the form and a checked field name instead of a render prop, and SubmitButton. Web-only: no React Native half.",
+      "files": [
+        "app-form"
+      ]
+    },
+    {
+      "name": "color-field",
+      "title": "Color Field",
+      "description": "A colour picker as one line, over a field the compiler checked holds a string. Web-only: no React Native half.",
+      "files": [
+        "color-field"
+      ]
+    },
+    {
+      "name": "control",
+      "title": "Control Set",
+      "description": "Every cubeui control in one install. Web-only: no React Native half.",
+      "files": []
+    },
+    {
+      "name": "date-field",
+      "title": "Date Field",
+      "description": "A date and a date range as one line each, over fields the compiler checked hold a Date and a DateRange. Web-only: no React Native half.",
+      "files": [
+        "date-field"
+      ]
+    },
+    {
+      "name": "field-row",
+      "title": "Field Row",
+      "description": "Fields side by side on one row, wrapping when they no longer fit rather than squeezing to a width the values no longer read at. Web-only: no React Native half.",
+      "files": [
+        "field-row"
+      ]
+    },
+    {
+      "name": "form-field",
+      "title": "Form Field",
+      "description": "One field: a label wired to its control, a description that sits inline or behind a help icon, an error the control is described by, and a skeleton the right height for what is loading. Presentational, so the TanStack binding sits on it rather than beside it. Web-only: no React Native half.",
+      "files": [
+        "form-field"
+      ]
+    },
+    {
+      "name": "form-set",
+      "title": "Form Set",
+      "description": "Every cubeui form component in one install, TanStack binding included. Named `form-set` rather than `form`: that name is the React Native `Form` component in this registry, and the shadcn CLI resolves a cross-item import by basename, so the two cannot share it. Web-only: no React Native half.",
+      "files": []
+    },
+    {
+      "name": "layout",
+      "title": "Layout Set",
+      "description": "Every cubeui layout shell in one install. Web-only: no React Native half.",
+      "files": []
+    },
+    {
+      "name": "markdown",
+      "title": "Markdown",
+      "description": "A Markdown string rendered from the theme's tokens and the registry's own primitives: a fenced block is a CodeBlock, a table the Table, a rule a Separator, a task item a read-only box in Checkbox's look. GitHub-flavoured, raw HTML never rendered, URLs filtered. Optional sections that fold by heading, wikilinks, and a resolveLink for links between an app's documents with the pending and broken looks built in. Web-only: no React Native half.",
+      "files": [
+        "markdown"
+      ]
+    },
+    {
+      "name": "markdown-code-editor",
+      "title": "Markdown Code Editor",
+      "description": "A Markdown source editor on CodeMirror 6, coloured from the theme's tokens: syntax highlighting, soft wrap, list continuation, undo history, a save key, and room for an app's own extensions. Heavy, so it is a default export to load with lazy(). The textarea markdown-editor is the light one. Web-only: no React Native half.",
+      "files": [
+        "markdown-code-editor"
+      ]
+    },
+    {
+      "name": "markdown-editor",
+      "title": "Markdown Editor",
+      "description": "A Markdown source and its rendering: a textarea beside a Markdown preview, and a toggle between edit, split and preview that the caller may hold or leave to the component. Web-only: no React Native half.",
+      "files": [
+        "markdown-editor"
+      ]
+    },
+    {
+      "name": "password-field",
+      "title": "Password Field",
+      "description": "A password as one line, with a reveal button none of the nine hand-written password inputs has. Web-only: no React Native half.",
+      "files": [
+        "password-field"
+      ]
+    },
+    {
+      "name": "primitive",
+      "title": "Vendored Primitives",
+      "description": "The shadcn primitives cubeui publishes, so a change made here reaches every project. Web-only: no React Native half.",
+      "files": []
+    },
+    {
+      "name": "table",
+      "title": "Table",
+      "description": "shadcn's data table, re-published from here so the table every admin page draws is edited in one place: row and column headers scoped, and a container a keyboard can scroll when the columns do not fit. Web-only: no React Native half.",
+      "files": [
+        "table"
+      ]
+    },
+    {
+      "name": "badge-stories",
+      "title": "Badge stories",
+      "description": "Storybook stories for @cubeui/badge, installed beside it so they render under your own stylesheet and run as tests under addon-vitest. Needs Storybook 9 or later on @storybook/react-vite.",
+      "files": [
+        "badge.stories"
+      ]
+    },
+    {
+      "name": "button-stories",
+      "title": "Button stories",
+      "description": "Storybook stories for @cubeui/button, installed beside it so they render under your own stylesheet and run as tests under addon-vitest. Needs Storybook 9 or later on @storybook/react-vite.",
+      "files": [
+        "button.stories"
+      ]
+    },
+    {
+      "name": "card-stories",
+      "title": "Card stories",
+      "description": "Storybook stories for @cubeui/card, installed beside it so they render under your own stylesheet and run as tests under addon-vitest. Needs Storybook 9 or later on @storybook/react-vite.",
+      "files": [
+        "card.stories"
+      ]
+    },
+    {
+      "name": "section-heading-stories",
+      "title": "Section Heading stories",
+      "description": "Storybook stories for @cubeui/section-heading, installed beside it so they render under your own stylesheet and run as tests under addon-vitest. Needs Storybook 9 or later on @storybook/react-vite.",
+      "files": [
+        "section-heading.stories"
+      ]
+    },
+    {
+      "name": "segmented-stories",
+      "title": "Segmented stories",
+      "description": "Storybook stories for @cubeui/segmented, installed beside it so they render under your own stylesheet and run as tests under addon-vitest. Needs Storybook 9 or later on @storybook/react-vite.",
+      "files": [
+        "segmented.stories"
+      ]
+    },
+    {
+      "name": "sidebar-stories",
+      "title": "Sidebar stories",
+      "description": "Storybook stories for @cubeui/sidebar, installed beside it so they render under your own stylesheet and run as tests under addon-vitest. Needs Storybook 9 or later on @storybook/react-vite.",
+      "files": [
+        "sidebar.stories"
+      ]
+    },
+    {
+      "name": "theme-picker-stories",
+      "title": "Theme Picker stories",
+      "description": "Storybook stories for @cubeui/theme-picker, installed beside it so they render under your own stylesheet and run as tests under addon-vitest. Needs Storybook 9 or later on @storybook/react-vite.",
+      "files": [
+        "theme-picker.stories"
+      ]
+    },
+    {
+      "name": "toggle-chip-stories",
+      "title": "Toggle Chip stories",
+      "description": "Storybook stories for @cubeui/toggle-chip, installed beside it so they render under your own stylesheet and run as tests under addon-vitest. Needs Storybook 9 or later on @storybook/react-vite.",
+      "files": [
+        "toggle-chip.stories"
+      ]
+    }
+  ]
+}

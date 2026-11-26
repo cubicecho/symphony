@@ -1,0 +1,50 @@
+# Symphony, with its built-in database in a named volume:
+#
+#   docker compose up -d --build
+#
+# Settings go in .env beside this file (copy .env.example): every variable in it is passed to the app,
+# SYMPHONY_MCP_KEY above all, and any SYMPHONY_… secrets upstream headers reference. After changing .env, run
+# `docker compose up -d` again so the container is recreated with it; a restart alone keeps the old values.
+#
+# A bind mount (./data:/data) works too; the directory must be writable by uid 1000, the image's node user.
+# To keep data in Postgres instead, uncomment the postgres service, DATABASE_URL and depends_on below.
+name: symphony
+services:
+  symphony:
+    image: ghcr.io/cubicecho/symphony:latest
+    build: .
+    restart: unless-stopped
+    # Every variable in .env reaches the app. Missing is fine (Compose 2.24 or later).
+    env_file:
+      - path: .env
+        required: false
+    # These win over .env: inside the container the app always listens on 3000 (PORT in .env picks the
+    # host's side of the mapping below) and keeps its data in the volume.
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      HOST: 0.0.0.0
+      DATA_DIR: /data
+      # DATABASE_URL: postgres://symphony:${POSTGRES_PASSWORD:-symphony}@postgres:5432/symphony
+    # depends_on:
+    #   postgres: { condition: service_healthy }
+    volumes:
+      - symphony_data:/data
+    ports:
+      - "${PORT:-3000}:3000"
+
+  # postgres:
+  #   image: postgres:17-alpine
+  #   restart: unless-stopped
+  #   environment: { POSTGRES_USER: symphony, POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-symphony}", POSTGRES_DB: symphony }
+  #   # No `ports`. The database is for the app beside it.
+  #   volumes: [symphony_pgdata:/var/lib/postgresql/data]
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "pg_isready -U symphony -d symphony"]
+  #     interval: 5s
+  #     timeout: 5s
+  #     retries: 10
+
+volumes:
+  symphony_data:
+  # symphony_pgdata:

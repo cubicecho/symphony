@@ -1,0 +1,103 @@
+name: CI
+on:
+  push: { branches: [main] }
+  pull_request:
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 26, cache: npm }
+      - run: npm ci
+      # Generated files aren't in the tree, so codegen runs before anything reads them.
+      - run: npm run codegen
+      - name: Lint
+        run: npx biome ci .
+      - name: Typecheck
+        run: npm run check:types
+      - name: Test
+        run: npm test
+
+  postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env: { POSTGRES_USER: ci, POSTGRES_PASSWORD: ci, POSTGRES_DB: ci }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgres://ci:ci@127.0.0.1:5432/ci
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with: { node-version: 26, cache: npm }
+      - run: npm ci
+      - name: Migrations apply
+        run: npm run db:migrate
+      # drizzle-kit writes nothing when the models and migrations agree.
+      - name: Migrations match the models
+        run: |
+          npm run db:generate
+          if [ -n "$(git status --porcelain drizzle)" ]; then
+            git status --porcelain drizzle
+            echo "::error::server/db/schema.ts changed without a migration. Run npm run db:generate and commit drizzle/."
+            exit 1
+          fi
+      # The server itself on Postgres: boots, migrates (already applied), creates Home, and keeps a page it is given.
+      - name: The server runs on Postgres
+        run: |
+          PORT=3010 node server/index.ts > server.log 2>&1 &
+          for attempt in $(seq 30); do curl -fsS http://127.0.0.1:3010/healthz && break; sleep 1; done
+          gql() { curl -fsS -H 'content-type: application/json' -d "$1" http://127.0.0.1:3010/graphql; }
+          gql '{"query":"mutation { addPage(input: { title: \"Tools\" }) { slug } }"}' | grep -q '"slug":"tools"'
+          gql '{"query":"{ pages { slug } }"}' | grep -q '"slug":"home"'
+          gql '{"query":"{ pages { slug } }"}' | grep -q '"slug":"tools"'
+      - name: Server log
+        if: failure()
+        run: cat server.log
+
+  boot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      # Loaded into the local daemon under the tag docker-compose.yml runs, so `up --no-build` uses it.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ghcr.io/cubicecho/symphony:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      # Settings reach the app through .env; PORT there must not move the app off the container's 3000.
+      - name: Write a .env
+        run: printf 'SYMPHONY_MCP_KEY=ci-key\nPORT=3000\nDATA_DIR=./not-the-volume\n' > .env
+      # --wait blocks until the app's healthcheck passes.
+      - name: Start the stack
+        run: docker compose up -d --no-build --wait --wait-timeout 180
+      - name: DATA_DIR stays the volume
+        run: docker compose logs | grep -F 'PGlite at /data/pg'
+      - name: /healthz answers
+        run: curl -fsS http://127.0.0.1:3000/healthz
+      - name: Home is served
+        run: |
+          curl -fsS -H 'content-type: application/json' \
+            -d '{"query":"{ pages { slug } }"}' http://127.0.0.1:3000/graphql | grep -q '"slug":"home"'
+      # The image carries the components and the contract agents read over MCP.
+      - name: /mcp takes the key from .env and serves the catalogue
+        run: |
+          mcp() { curl -fsS -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' -H 'x-api-key: ci-key' -d "$1" http://127.0.0.1:3000/mcp; }
+          mcp '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"list_components","arguments":{}}}' | grep -q 'card-layout'
+          mcp '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_module_contract","arguments":{}}}' | grep -q 'symphony'
+          test "$(curl -s -o /dev/null -w '%{http_code}' -X POST http://127.0.0.1:3000/mcp)" = 401
+      - name: Logs
+        if: failure()
+        run: docker compose logs

@@ -1,0 +1,65 @@
+fragment ItemFields on Item {
+  id
+  columnSpan
+  fullWidth
+  module {
+    ...ModuleSummaryFields
+  }
+}
+
+fragment PageFields on Page {
+  slug
+  title
+  items {
+    ...ItemFields
+  }
+}
+
+query Pages {
+  pages {
+    ...PageFields
+  }
+}
+
+query Limits {
+  limits {
+    columns
+    maxColumns
+    newItemColumns
+    maxSourceChars
+  }
+}
+
+mutation AddPage($input: AddPageInput!) {
+  addPage(input: $input) {
+    ...PageFields
+  }
+}
+
+mutation DeletePage($slug: String!) {
+  deletePage(slug: $slug)
+}
+
+mutation AddItem($input: AddItemInput!) {
+  addItem(input: $input) {
+    ...PageFields
+  }
+}
+
+mutation UpdateItem($input: UpdateItemInput!) {
+  updateItem(input: $input) {
+    ...PageFields
+  }
+}
+
+mutation MoveItem($id: ID!, $offset: Int!) {
+  moveItem(id: $id, offset: $offset) {
+    ...PageFields
+  }
+}
+
+mutation RemoveItem($id: ID!) {
+  removeItem(id: $id) {
+    ...PageFields
+  }
+}

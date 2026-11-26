@@ -1,0 +1,51 @@
+fragment CompileErrorFields on CompileError {
+  stage
+  message
+  line
+  column
+}
+
+fragment ModuleSummaryFields on Module {
+  id
+  name
+  description
+  status
+  version
+  codeUrl
+  updatedAt
+  upstream {
+    id
+    name
+    proxyPath
+  }
+}
+
+fragment ModuleFields on Module {
+  ...ModuleSummaryFields
+  source
+  errors {
+    ...CompileErrorFields
+  }
+}
+
+query Modules {
+  modules {
+    ...ModuleSummaryFields
+  }
+}
+
+query Module($id: ID!) {
+  module(id: $id) {
+    ...ModuleFields
+  }
+}
+
+mutation SaveModule($input: SaveModuleInput!) {
+  saveModule(input: $input) {
+    ...ModuleFields
+  }
+}
+
+mutation DeleteModule($id: ID!) {
+  deleteModule(id: $id)
+}

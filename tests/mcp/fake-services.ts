@@ -1,0 +1,142 @@
+// In-memory Services for the MCP tests: one upstream over the fixture schema, modules in a map, and a
+// compile that fails on a marker so errors can be followed through.
+import { buildSchema } from 'graphql';
+import { createComponentCatalog } from '../../server/catalog/catalog.ts';
+import { notFound } from '../../server/core/errors.ts';
+import {
+  type ComponentCatalog,
+  type ModuleRecord,
+  ModuleStatus,
+  type PageService,
+  type Services,
+  type Upstream,
+} from '../../server/core/services.ts';
+import { type CompileResult, CompileStage } from '../../server/modules/compile-result.ts';
+import { FIXTURE_SDL, FIXTURE_URL } from '../fixtures/upstream.ts';
+
+/** A source holding this fails the fake compile at line 3, column 7. */
+export const BROKEN_MARKER = 'BROKEN';
+
+/** The fake upstream's name. */
+export const FAKE_UPSTREAM = 'shop';
+
+/** The error the fake compile reports for a broken source. */
+export const FAKE_ERROR = {
+  stage: CompileStage.Graphql,
+  message: 'Cannot query field "totl" on type "Order".',
+  line: 3,
+  column: 7,
+};
+
+/**
+ * Compiles a source the fake way.
+ *
+ * @param source - The TSX source.
+ * @returns Ok unless the source holds BROKEN_MARKER.
+ */
+function fakeCompile(source: string): CompileResult {
+  const isBroken = source.includes(BROKEN_MARKER);
+  return isBroken
+    ? { ok: false, errors: [FAKE_ERROR], compiled: null, documents: [] }
+    : { ok: true, errors: [], compiled: 'module.exports = {};', documents: ['{ orders { id } }'] };
+}
+
+/** What the fakes record, for assertions. */
+export interface FakeCalls {
+  executed: { id: string; query: string }[];
+}
+
+/**
+ * Builds the fake services.
+ *
+ * @param [catalog] - The catalog; the real one over web/src/components when left out.
+ * @returns The services and the calls they saw.
+ */
+export function createFakeServices(catalog: ComponentCatalog = createComponentCatalog()): {
+  services: Services;
+  calls: FakeCalls;
+} {
+  const calls: FakeCalls = { executed: [] };
+  const schema = buildSchema(FIXTURE_SDL);
+  const upstreams: Upstream[] = [
+    {
+      id: 'u1',
+      name: FAKE_UPSTREAM,
+      url: FIXTURE_URL,
+      headers: [{ name: 'authorization', value: '${env:SYMPHONY_SECRET}' }],
+      schema: {
+        schema,
+        sdl: FIXTURE_SDL,
+        hash: 'h',
+        typeCount: Object.keys(schema.getTypeMap()).length,
+        fetchedAt: new Date('2026-11-20T00:00:00Z'),
+      },
+    },
+    { id: 'u2', name: 'empty', url: 'http://empty.test/graphql', headers: [], schema: null },
+  ];
+  const find = async (idOrName: string) =>
+    upstreams.find((upstream) => upstream.id === idOrName || upstream.name === idOrName) ?? null;
+  const modules = new Map<string, ModuleRecord>();
+  const unused = async (): Promise<never> => {
+    throw new Error('Not used by the MCP tests.');
+  };
+  const pages: PageService = {
+    list: unused,
+    find: unused,
+    add: unused,
+    remove: unused,
+    addItem: unused,
+    updateItem: unused,
+    moveItem: unused,
+    removeItem: unused,
+  };
+  const services: Services = {
+    upstreams: {
+      list: async () => upstreams,
+      find,
+      add: unused,
+      update: unused,
+      remove: unused,
+      refresh: unused,
+      execute: async (id, request) => {
+        calls.executed.push({ id, query: request.query });
+        return { data: { orders: [{ id: 'o3' }] } };
+      },
+    },
+    modules: {
+      list: async () => [...modules.values()],
+      find: async (id) => modules.get(id) ?? null,
+      remove: async (id) => modules.delete(id),
+      check: async (_upstream, source) => fakeCompile(source),
+      save: async (input) => {
+        const upstream = await find(input.upstream);
+        if (upstream === null) {
+          throw notFound(`No upstream "${input.upstream}".`);
+        }
+        const previous = input.id === undefined ? undefined : modules.get(input.id);
+        const isUnknownId = input.id !== undefined && previous === undefined;
+        if (isUnknownId) {
+          throw notFound(`No module "${input.id}".`);
+        }
+        const compile = fakeCompile(input.source);
+        const module: ModuleRecord = {
+          id: previous?.id ?? `m${modules.size + 1}`,
+          name: input.name,
+          description: input.description ?? '',
+          upstreamId: upstream.id,
+          source: input.source,
+          compiled: compile.compiled,
+          status: compile.ok ? ModuleStatus.Ready : ModuleStatus.Failed,
+          errors: compile.errors,
+          version: (previous?.version ?? 0) + 1,
+          updatedAt: new Date(),
+        };
+        modules.set(module.id, module);
+        return { module, compile };
+      },
+    },
+    pages,
+    catalog,
+  };
+  return { services, calls };
+}
