@@ -94,6 +94,18 @@ export interface ConceptUpstreams {
   /** Every request sent, by upstream name, in order. */
   calls: { upstream: string; query: string }[];
   execute: ExecuteUpstream;
+  /** Reaches the same servers over HTTP-shaped requests, at `http://<upstream>.test/graphql`, for a gateway. */
+  fetch: typeof fetch;
+}
+
+/**
+ * The URL a gateway reaches one fixture upstream at.
+ *
+ * @param upstream - Its name.
+ * @returns Its GraphQL endpoint.
+ */
+export function conceptUpstreamUrl(upstream: string): string {
+  return `http://${upstream}.test/graphql`;
 }
 
 /** The schemas the concept is validated against, as Symphony would cache them. */
@@ -148,6 +160,7 @@ export function createConceptUpstreams(): ConceptUpstreams {
     unreachable: new Set(),
     calls: [],
     execute: async () => ({}),
+    fetch: async () => new Response(null, { status: 404 }),
   };
   const billing = createSchema({
     typeDefs: BILLING_SDL,
@@ -199,6 +212,14 @@ export function createConceptUpstreams(): ConceptUpstreams {
       body: JSON.stringify(request),
     });
     return response.json();
+  };
+  upstreams.fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    const server = servers.get(url.hostname.replace(/\.test$/, ''));
+    if (server === undefined) {
+      return new Response(null, { status: 404 });
+    }
+    return server.fetch(new Request(input, init));
   };
   return upstreams;
 }
