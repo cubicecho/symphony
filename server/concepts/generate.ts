@@ -1,6 +1,7 @@
 // Generates the SDL of the concept subgraph: per concept, the inputs its mutations take, its presence and
-// write-result types, one query and four mutations. Types come from the variables that bind each field
-// (validate.ts); an upstream input, enum or scalar an owned field uses is copied under a member prefix.
+// write-result types, one query and four mutations. Every entity is keyed by its Symphony UUID, `id: ID!`.
+// Field types come from the variables that bind each field (validate.ts); an upstream input, enum or scalar
+// an owned field uses is copied under a member prefix.
 import {
   type ASTNode,
   type GraphQLSchema,
@@ -20,7 +21,7 @@ import {
   ConceptOperation,
   FieldMode,
   fieldsOwnedBy,
-  keyFieldOf,
+  ID_FIELD,
   lowerFirst,
   memberArgumentName,
   memberEnumValue,
@@ -38,7 +39,7 @@ scalar JSON
 enum PresenceStatus {
   "It has the entity, and its shared fields match the first member that has it."
   PRESENT
-  "Its fetch found nothing for the key."
+  "Its fetch found nothing with the id."
   MISSING
   "It has the entity, but a shared field differs."
   DRIFTED
@@ -277,9 +278,8 @@ function generateConcept(concept: Concept, schemas: ReadonlyMap<string, GraphQLS
     }
     return { upstream: member.upstream, documents: memberDocuments(member), schema };
   });
-  const key = keyFieldOf(concept);
   const shared = concept.fields.filter((field) => field.mode === FieldMode.Shared);
-  // Key and shared types are built-in scalars and agree across members (validate.ts), so any create says them.
+  // Shared types are built-in scalars and agree across members (validate.ts), so any create says them.
   const createBindings = (field: ConceptField) =>
     members.flatMap((member) => bindingOf(concept, member.documents, ConceptOperation.Create, field) ?? []);
   const typeOf = (field: ConceptField) => {
@@ -289,9 +289,10 @@ function generateConcept(concept: Concept, schemas: ReadonlyMap<string, GraphQLS
     }
     return print(nullableType(first.type));
   };
-  const keyType = typeOf(key);
+  const idLine = `  "The entity's Symphony UUID, the same in every upstream."\n  ${ID_FIELD}: ID!`;
+  const requiredShared = shared.filter((field) => createBindings(field).some(isRequiredVariable));
   const sharedLines = shared.map((field) => {
-    const isRequired = createBindings(field).some(isRequiredVariable);
+    const isRequired = requiredShared.includes(field);
     return `  ${field.name}: ${typeOf(field)}${isRequired ? '!' : ''}`;
   });
   const patchLines = shared.map((field) => `  ${field.name}: ${typeOf(field)}`);
@@ -301,34 +302,42 @@ function generateConcept(concept: Concept, schemas: ReadonlyMap<string, GraphQLS
   const types = [
     `"The upstreams a ${concept.name} can live in."\nenum ${names.app} {\n${appValues.join('\n')}\n}`,
     `"How one upstream holds a ${concept.name}."\ntype ${names.presence} {\n  app: ${names.app}!\n  status: PresenceStatus!\n  drift: [FieldDrift!]!\n  "Why the fetch failed, when it did."\n  error: String\n  "What the upstream's fetch returned."\n  data: JSON\n}`,
-    `type ${names.type} {\n  ${key.name}: ${keyType}!\n${shared.map((field) => `  ${field.name}: ${typeOf(field)}`).join('\n')}\n  "Every member upstream, and how it holds this ${concept.name}."\n  ${PRESENCE_FIELD}: [${names.presence}!]!\n}`,
-    `"What a write to a ${concept.name} did in each upstream. Nothing is rolled back."\ntype ${names.writeResult} {\n  key: ${keyType}!\n  results: [AppWriteResult!]!\n  "True when any upstream failed."\n  partial: Boolean!\n}`,
-    `"The key and shared fields of a new ${concept.name}."\ninput ${names.shared} {\n  ${key.name}: ${keyType}!\n${sharedLines.join('\n')}\n}`,
+    `type ${names.type} {\n${[idLine, ...shared.map((field) => `  ${field.name}: ${typeOf(field)}`)].join('\n')}\n  "Every member upstream, and how it holds this ${concept.name}."\n  ${PRESENCE_FIELD}: [${names.presence}!]!\n}`,
+    `"What a write to a ${concept.name} did in each upstream. Nothing is rolled back."\ntype ${names.writeResult} {\n${idLine}\n  results: [AppWriteResult!]!\n  "True when any upstream failed."\n  partial: Boolean!\n}`,
     ...own.flatMap((member) => member.types),
   ];
-  const hasSharedPatch = patchLines.length > 0;
-  if (hasSharedPatch) {
+  const hasShared = sharedLines.length > 0;
+  if (hasShared) {
+    types.push(`"The shared fields of a new ${concept.name}."\ninput ${names.shared} {\n${sharedLines.join('\n')}\n}`);
+  }
+  if (hasShared) {
     types.push(
       `"Shared fields to change on every upstream. Leave one out to keep it."\ninput ${names.sharedPatch} {\n${patchLines.join('\n')}\n}`,
     );
   }
-  const createArgs = [`shared: ${names.shared}!`, ...own.map((member) => member.createArg), `in: [${names.app}!]!`];
+  const sharedArg = requiredShared.length > 0 ? `shared: ${names.shared}!` : `shared: ${names.shared}`;
+  const createArgs = [
+    `${ID_FIELD}: ID`,
+    ...(hasShared ? [sharedArg] : []),
+    ...own.map((member) => member.createArg),
+    `in: [${names.app}!]!`,
+  ];
   const updateArgs = [
-    `key: ${keyType}!`,
-    ...(hasSharedPatch ? [`shared: ${names.sharedPatch}`] : []),
+    `${ID_FIELD}: ID!`,
+    ...(hasShared ? [`shared: ${names.sharedPatch}`] : []),
     ...own.map((member) => member.updateArg),
   ];
   const argList = (args: string[]) => args.filter((arg) => arg.length > 0).join(', ');
   return {
     types,
     queries: [
-      `  "A ${concept.name} by its key, read from every upstream. Null when none has it."\n  ${names.query}(key: ${keyType}!): ${names.type}`,
+      `  "A ${concept.name} by its id, read from every upstream. Null when none has it."\n  ${names.query}(${ID_FIELD}: ID!): ${names.type}`,
     ],
     mutations: [
-      `  "Creates a ${concept.name} in the chosen upstreams at once."\n  ${names.create}(${argList(createArgs)}): ${names.writeResult}!`,
+      `  "Creates a ${concept.name} in the chosen upstreams at once, under the UUID \`${ID_FIELD}\` or a new one."\n  ${names.create}(${argList(createArgs)}): ${names.writeResult}!`,
       `  "Changes shared fields in every upstream, and own fields in their owner."\n  ${names.update}(${argList(updateArgs)}): ${names.writeResult}!`,
-      `  "Creates an existing ${concept.name} in one more upstream, copying its shared fields. \`own\` holds that upstream's own fields."\n  ${names.attach}(key: ${keyType}!, app: ${names.app}!, own: JSON): ${names.writeResult}!`,
-      `  "Deletes a ${concept.name} from every upstream. One that has none already counts as done."\n  ${names.delete}(key: ${keyType}!): ${names.writeResult}!`,
+      `  "Creates an existing ${concept.name} in one more upstream, copying its shared fields. \`own\` holds that upstream's own fields."\n  ${names.attach}(${ID_FIELD}: ID!, app: ${names.app}!, own: JSON): ${names.writeResult}!`,
+      `  "Deletes a ${concept.name} from every upstream. One that has none already counts as done."\n  ${names.delete}(${ID_FIELD}: ID!): ${names.writeResult}!`,
     ],
   };
 }

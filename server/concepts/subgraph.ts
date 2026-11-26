@@ -2,7 +2,7 @@
 import { GraphQLScalarType, type GraphQLSchema, valueFromASTUntyped } from 'graphql';
 import { createSchema } from 'graphql-yoga';
 import { badInput } from '../core/errors.ts';
-import { type Concept, memberArgumentName, memberEnumValue } from './concept.ts';
+import { type Concept, ID_FIELD, memberArgumentName, memberEnumValue } from './concept.ts';
 import { createConceptEngine, type ExecuteUpstream, type FieldValues, isRecord } from './engine.ts';
 import { conceptNames, generateConceptSdl, SERVED_CONCEPTS_FIELD } from './generate.ts';
 import { type ConceptProblem, validateConcepts } from './validate.ts';
@@ -49,6 +49,27 @@ function fieldValues(value: unknown): FieldValues {
 }
 
 /**
+ * Reads the `id` argument, which the engine checks is a UUID before calling any upstream.
+ *
+ * @param args - The field's arguments.
+ * @returns The id as sent, or undefined when it was left out.
+ */
+function idArgument(args: Record<string, unknown>): string | undefined {
+  const id = args[ID_FIELD];
+  return id === undefined || id === null ? undefined : String(id);
+}
+
+/**
+ * Reads an `id: ID!` argument, which GraphQL has already made sure is there.
+ *
+ * @param args - The field's arguments.
+ * @returns The id as sent.
+ */
+function requiredIdArgument(args: Record<string, unknown>): string {
+  return idArgument(args) ?? '';
+}
+
+/**
  * Builds one concept's resolvers over its engine.
  *
  * @param concept - A validated concept.
@@ -68,24 +89,25 @@ function conceptResolvers(
   return {
     // The enum's values resolve to upstream names, so the engine never sees `BILLING`.
     app: Object.fromEntries(upstreams.map((upstream) => [memberEnumValue(upstream), upstream])),
-    query: { [names.query]: (_parent, args) => engine.read(args.key) },
+    query: { [names.query]: (_parent, args) => engine.read(requiredIdArgument(args)) },
     mutation: {
       [names.create]: (_parent, args) =>
         engine.create({
+          id: idArgument(args),
           shared: fieldValues(args.shared),
           own: ownByUpstream(args),
           in: Array.isArray(args.in) ? args.in.map(String) : [],
         }),
       [names.update]: (_parent, args) =>
-        engine.update({ key: args.key, shared: fieldValues(args.shared), own: ownByUpstream(args) }),
+        engine.update({ id: requiredIdArgument(args), shared: fieldValues(args.shared), own: ownByUpstream(args) }),
       [names.attach]: (_parent, args) => {
         const own = args.own ?? {};
         if (isRecord(own) === false) {
           throw badInput('`own` is an object of the upstream\'s own fields, such as { "plan": "PRO" }.');
         }
-        return engine.attach({ key: args.key, app: String(args.app), own });
+        return engine.attach({ id: requiredIdArgument(args), app: String(args.app), own });
       },
-      [names.delete]: (_parent, args) => engine.remove(args.key),
+      [names.delete]: (_parent, args) => engine.remove(requiredIdArgument(args)),
     },
   };
 }

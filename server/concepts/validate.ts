@@ -1,11 +1,12 @@
 // Checks a concept's member documents against each member's schema, and that their variables can be bound.
 //
 // Variable binding, the rule the engine and the generator share:
-// - `$key` binds the concept's key value, and so does a variable named after the key field (`$slug`).
+// - `$id` binds the entity's Symphony UUID. Every document binds it, declared `ID!` or `String!`, and the
+//   upstream stores it as its own id. The fetch selects it back as `id`, aliased if need be (`id: uuid`).
 // - A variable named after a shared field (`$name`) binds that field's value.
 // - A variable named after an owned field binds it from the owner's own input, and only in the owner's documents.
 // - Any other variable binds nothing: it is left out of the request, so it must be nullable or have a default.
-// The documents adapt each upstream's input shape to the concept (`openAccount(input: { handle: $key })`),
+// The documents adapt each upstream's input shape to the concept (`openAccount(input: { handle: $slug })`),
 // and aliases in the fetch selection adapt its output (`{ name: displayName }`).
 import {
   type DocumentNode,
@@ -34,8 +35,8 @@ import {
   type ConceptMember,
   ConceptOperation,
   FieldMode,
-  KEY_VARIABLE,
-  keyFieldOf,
+  ID_FIELD,
+  ID_VARIABLE,
 } from './concept.ts';
 
 /** One problem with a concept, placed in the member document it is about when it has a place. */
@@ -69,8 +70,11 @@ const EXPECTED_OPERATION: Readonly<Record<ConceptOperation, OperationTypeNode>> 
 /** The operations that write every shared field, since shared fields go to every member. */
 const WRITES_SHARED = new Set<ConceptOperation>([ConceptOperation.Create, ConceptOperation.Update]);
 
-/** Names of the scalars every GraphQL schema has. Key and shared fields use only these, so members agree. */
+/** Names of the scalars every GraphQL schema has. Shared fields use only these, so members agree. */
 const BUILT_IN_SCALARS = new Set(specifiedScalarTypes.map((scalar) => scalar.name));
+
+/** The types `$id` may be declared with: a UUID travels as an ID or a String, and every document needs it. */
+const ID_VARIABLE_TYPES = new Set(['ID!', 'String!']);
 
 /** A problem before the concept and member are filled in. */
 type DocumentProblem = Pick<ConceptProblem, 'message' | 'line' | 'column'>;
@@ -82,17 +86,28 @@ interface ProblemSite {
 }
 
 /**
- * Applies the binding rule to one variable name.
+ * Applies the binding rule to one variable name, for the concept's declared fields.
  *
  * @param concept - The concept.
  * @param variable - A document variable's name, without the `$`.
- * @returns The concept field it binds, or undefined when it binds nothing.
+ * @returns The concept field it binds, or undefined when it binds a field of none (`$id` included).
  */
 export function boundField(concept: Concept, variable: string): ConceptField | undefined {
-  if (variable === KEY_VARIABLE) {
-    return keyFieldOf(concept);
-  }
   return concept.fields.find((field) => field.name === variable);
+}
+
+/**
+ * Applies the whole binding rule to one variable name: the id, a field, or nothing.
+ *
+ * @param concept - The concept.
+ * @param variable - A document variable's name, without the `$`.
+ * @returns The name its value is kept under in field values (`id` for `$id`), or undefined when it binds nothing.
+ */
+export function boundValueName(concept: Concept, variable: string): string | undefined {
+  if (variable === ID_VARIABLE) {
+    return ID_FIELD;
+  }
+  return boundField(concept, variable)?.name;
 }
 
 /**
@@ -189,7 +204,15 @@ function bindingProblems(
     const name = definition.variable.name.value;
     const field = boundField(concept, name);
     const place = placeOf(definition.loc);
-    if (field === undefined) {
+    if (name === ID_VARIABLE) {
+      const typeText = print(definition.type);
+      const hasIdType = ID_VARIABLE_TYPES.has(typeText);
+      if (hasIdType === false) {
+        const message = `$${ID_VARIABLE} is declared ID! or String!, since every ${operation} needs the entity's UUID; this one is ${typeText}.`;
+        problems.push({ message, ...place });
+      }
+      bound.add(ID_FIELD);
+    } else if (field === undefined) {
       if (isRequiredVariable(definition)) {
         const message = `$${name} is required but binds nothing: no concept field is called "${name}". Rename it after a field, or make it nullable.`;
         problems.push({ message, ...place });
@@ -204,10 +227,9 @@ function bindingProblems(
     }
   }
   const operationPlace = placeOf(parsed.operation.loc);
-  const key = keyFieldOf(concept);
-  if (bound.has(key.name) === false) {
+  if (bound.has(ID_FIELD) === false) {
     problems.push({
-      message: `A ${operation} document binds the key, as $${KEY_VARIABLE} or $${key.name}.`,
+      message: `A ${operation} document binds the entity's Symphony UUID as $${ID_VARIABLE}, declared ID! or String!.`,
       ...operationPlace,
     });
   }
@@ -224,7 +246,8 @@ function bindingProblems(
 }
 
 /**
- * Checks that a fetch selects the key and every shared field, by response key, so reads can compare them.
+ * Checks that a fetch selects the id and every shared field, by response key: the gateway merges on the id,
+ * and reads compare the shared fields.
  *
  * @param concept - The concept.
  * @param parsed - The fetch document.
@@ -237,16 +260,27 @@ function fetchSelectionProblems(concept: Concept, parsed: MemberDocument): Docum
       selection.kind === Kind.FIELD ? [selection.alias?.value ?? selection.name.value] : [],
     ),
   );
-  const compared = concept.fields.filter((field) => field.mode !== FieldMode.Owned);
-  const missing = compared.filter((field) => responseKeys.has(field.name) === false);
+  const root = parsed.rootField.name.value;
   const place = placeOf(parsed.rootField.loc);
-  return missing.map((field) => ({
-    message: `The fetch selects "${field.name}" directly under ${parsed.rootField.name.value}; alias the upstream's field to that name if it differs.`,
-    ...place,
-  }));
+  const problems: DocumentProblem[] = [];
+  if (responseKeys.has(ID_FIELD) === false) {
+    problems.push({
+      message: `The fetch selects the entity's id as "${ID_FIELD}" directly under ${root}, since the gateway merges on it; alias the upstream's field if it is called something else (${ID_FIELD}: uuid).`,
+      ...place,
+    });
+  }
+  const shared = concept.fields.filter((field) => field.mode === FieldMode.Shared);
+  const missing = shared.filter((field) => responseKeys.has(field.name) === false);
+  problems.push(
+    ...missing.map((field) => ({
+      message: `The fetch selects "${field.name}" directly under ${root}; alias the upstream's field to that name if it differs.`,
+      ...place,
+    })),
+  );
+  return problems;
 }
 
-/** A variable that binds the key or a shared field, kept to compare its type across members. */
+/** A variable that binds a shared field, kept to compare its type across members. */
 interface SharedBinding extends ProblemSite {
   field: string;
   definition: VariableDefinitionNode;
@@ -265,10 +299,10 @@ export function nullableType(type: TypeNode): TypeNode {
 }
 
 /**
- * Checks that the key and each shared field have one type everywhere, and that it is a built-in scalar.
+ * Checks that each shared field has one type everywhere, and that it is a built-in scalar.
  *
  * @param concept - The concept.
- * @param bindings - Every variable binding the key or a shared field, in member then operation order.
+ * @param bindings - Every variable binding a shared field, in member then operation order.
  * @param schemas - Each member's schema.
  * @returns The problems, as full ConceptProblems.
  */
@@ -287,7 +321,7 @@ function sharedTypeProblems(
     const namedType = resolved === undefined ? undefined : getNamedType(resolved);
     const isBuiltIn = namedType !== undefined && BUILT_IN_SCALARS.has(namedType.name);
     if (isBuiltIn === false) {
-      const message = `"${binding.field}" is the key or shared, so its type must be a built-in scalar in every member; ${binding.typeText} is not.`;
+      const message = `"${binding.field}" is shared, so its type must be a built-in scalar in every member; ${binding.typeText} is not.`;
       problems.push({ ...site, message, ...place });
       continue;
     }
@@ -303,7 +337,7 @@ function sharedTypeProblems(
 }
 
 /**
- * Collects the variables of one document that bind the key or a shared field.
+ * Collects the variables of one document that bind a shared field.
  *
  * @param concept - The concept.
  * @param site - The member and operation.

@@ -16,15 +16,18 @@ import {
 } from '../fixtures/concept-upstreams.ts';
 import { postGraphQL } from '../fixtures/unified-sources.ts';
 
+/** The id the `core` team is created under, in every upstream. */
+const CORE_ID = '6f1c4a52-3b8e-4d7a-9c21-5e0f8b3d2a14';
+
 const CREATE = /* GraphQL */ `
-  mutation ($shared: TeamShared!, $billing: TeamBillingOwn, $in: [TeamApp!]!) {
-    createTeam(shared: $shared, billing: $billing, in: $in) { key partial results { app ok } }
+  mutation ($id: ID, $shared: TeamShared!, $billing: TeamBillingOwn, $in: [TeamApp!]!) {
+    createTeam(id: $id, shared: $shared, billing: $billing, in: $in) { id partial results { app ok } }
   }
 `;
 
 const READ = /* GraphQL */ `
-  query ($slug: String!) {
-    team(slug: $slug) { slug name memberCount plan seats presence { app status drift { field actual } } }
+  query ($id: ID!) {
+    team(id: $id) { id slug name memberCount plan seats presence { app status drift { field actual } } }
   }
 `;
 
@@ -44,7 +47,7 @@ function sources(): Source[] {
       kind: 'graphql',
       endpoint: conceptUpstreamUrl('directory'),
       sdl: DIRECTORY_SDL,
-      mergeKeys: [{ type: 'Team', keyField: 'slug', lookupField: 'team' }],
+      mergeKeys: [{ type: 'Team', keyField: 'id', lookupField: 'team' }],
     },
     {
       name: 'billing',
@@ -55,14 +58,14 @@ function sources(): Source[] {
         types: { Account: 'Team' },
         fields: { 'Account.handle': 'slug', 'Account.displayName': 'name', 'Query.account': 'billingTeam' },
       },
-      mergeKeys: [{ type: 'Team', keyField: 'slug', lookupField: 'billingTeam', keyArg: 'handle' }],
+      mergeKeys: [{ type: 'Team', keyField: 'id', lookupField: 'billingTeam' }],
     },
     {
       name: 'concepts',
       kind: 'schema',
       schema: createConceptSubgraph([concept], CONCEPT_SCHEMAS, upstreams.execute),
       renames: { fields: { 'Query.team': 'conceptTeam' } },
-      mergeKeys: [{ type: 'Team', keyField: 'slug', lookupField: 'conceptTeam', keyArg: 'key' }],
+      mergeKeys: [{ type: 'Team', keyField: 'id', lookupField: 'conceptTeam' }],
     },
   ];
 }
@@ -77,13 +80,14 @@ afterAll(() => gateway.dispose());
 describe('a generated concept subgraph behind the unified gateway', () => {
   it('creates the entity in every upstream through one mutation', async () => {
     const body = await postGraphQL(gateway.runtime, CREATE, {
+      id: CORE_ID,
       shared: { slug: 'core', name: 'Core' },
       billing: { plan: 'PRO' },
       in: ['DIRECTORY', 'BILLING'],
     });
     expect(body.errors).toBeUndefined();
     expect(body.data?.createTeam).toEqual({
-      key: 'core',
+      id: CORE_ID,
       partial: false,
       results: [
         { app: 'directory', ok: true },
@@ -93,9 +97,10 @@ describe('a generated concept subgraph behind the unified gateway', () => {
   });
 
   it('reads one merged Team with fields from every source, presence included', async () => {
-    const body = await postGraphQL(gateway.runtime, READ, { slug: 'core' });
+    const body = await postGraphQL(gateway.runtime, READ, { id: CORE_ID });
     expect(body.errors).toBeUndefined();
     expect(body.data?.team).toEqual({
+      id: CORE_ID,
       slug: 'core',
       name: 'Core',
       memberCount: 0,
@@ -109,12 +114,12 @@ describe('a generated concept subgraph behind the unified gateway', () => {
   });
 
   it('shows drift when one upstream is changed behind the gateway', async () => {
-    const account = upstreams.accounts.get('core');
+    const account = upstreams.accounts.get(CORE_ID);
     if (account === undefined) {
       throw new Error('The create test should have opened the account.');
     }
     account.displayName = 'Core (billing)';
-    const body = await postGraphQL(gateway.runtime, READ, { slug: 'core' });
+    const body = await postGraphQL(gateway.runtime, READ, { id: CORE_ID });
     expect(body.errors).toBeUndefined();
     const team = body.data?.team as { presence: unknown[] };
     expect(team.presence).toEqual([
@@ -126,11 +131,18 @@ describe('a generated concept subgraph behind the unified gateway', () => {
   it('repairs the drift with one update, written to every upstream', async () => {
     const update = await postGraphQL(
       gateway.runtime,
-      'mutation { updateTeam(key: "core", shared: { name: "Core team" }) { partial } }',
+      `mutation { updateTeam(id: "${CORE_ID}", shared: { name: "Core team" }) { partial } }`,
     );
     expect(update.errors).toBeUndefined();
     expect(update.data?.updateTeam).toEqual({ partial: false });
-    expect(upstreams.teams.get('core')?.name).toBe('Core team');
-    expect(upstreams.accounts.get('core')?.displayName).toBe('Core team');
+    expect(upstreams.teams.get(CORE_ID)?.name).toBe('Core team');
+    expect(upstreams.accounts.get(CORE_ID)?.displayName).toBe('Core team');
+  });
+
+  it('refuses an id that is not a UUID before reaching any upstream', async () => {
+    upstreams.calls.length = 0;
+    const body = await postGraphQL(gateway.runtime, 'mutation { deleteTeam(id: "core") { partial } }');
+    expect(body.errors?.[0]?.extensions?.code).toBe('BAD_USER_INPUT');
+    expect(upstreams.calls).toEqual([]);
   });
 });

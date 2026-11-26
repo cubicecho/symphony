@@ -1,6 +1,7 @@
-// Two small upstreams that both hold a Team keyed by its slug, with differently named mutations and input
-// shapes: "directory" knows teams by name, "billing" knows them as accounts with a plan. Tests serve them
-// in-process and reach them through an ExecuteUpstream, as the concept engine will reach real upstreams.
+// Two small upstreams that both hold a Team under one Symphony UUID, with differently named mutations and
+// input shapes: "directory" knows teams by slug and name, "billing" knows them as accounts with a handle and a
+// plan. Tests serve them in-process and reach them through an ExecuteUpstream, as the concept engine will
+// reach real upstreams.
 import { buildSchema, GraphQLError, type GraphQLSchema } from 'graphql';
 import { createSchema, createYoga } from 'graphql-yoga';
 import type { Concept } from '../../server/concepts/concept.ts';
@@ -8,26 +9,28 @@ import type { ExecuteUpstream } from '../../server/concepts/engine.ts';
 
 export const DIRECTORY_SDL = /* GraphQL */ `
   type Team {
+    id: ID!
     slug: String!
     name: String!
     memberCount: Int!
   }
 
   input NewTeam {
+    id: ID!
     slug: String!
     name: String!
   }
 
   type Query {
-    team(slug: String!): Team
+    team(id: ID!): Team
   }
 
   type Mutation {
     addTeam(input: NewTeam!): Team!
-    "Null when there is no such team."
-    renameTeam(slug: String!, name: String!): Team
+    "Null when there is no such team. Leave a field out to keep it."
+    renameTeam(id: ID!, name: String, slug: String): Team
     "Fails when there is no such team."
-    removeTeam(slug: String!): Boolean!
+    removeTeam(id: ID!): Boolean!
   }
 `;
 
@@ -42,6 +45,7 @@ export const BILLING_SDL = /* GraphQL */ `
   }
 
   input AccountInput {
+    id: ID!
     handle: String!
     displayName: String!
     plan: Plan!
@@ -49,6 +53,7 @@ export const BILLING_SDL = /* GraphQL */ `
   }
 
   type Account {
+    id: ID!
     handle: String!
     displayName: String!
     plan: Plan!
@@ -56,20 +61,21 @@ export const BILLING_SDL = /* GraphQL */ `
   }
 
   type Query {
-    account(handle: String!): Account
+    account(id: ID!): Account
   }
 
   type Mutation {
     openAccount(input: AccountInput!): Account!
     "Null when there is no such account."
-    changeAccount(handle: String!, displayName: String, plan: Plan): Account
+    changeAccount(id: ID!, handle: String, displayName: String, plan: Plan): Account
     "Null when there is no such account."
-    closeAccount(handle: String!): Account
+    closeAccount(id: ID!): Account
   }
 `;
 
 /** A team in the directory. */
 export interface DirectoryTeam {
+  id: string;
   slug: string;
   name: string;
   memberCount: number;
@@ -77,6 +83,7 @@ export interface DirectoryTeam {
 
 /** An account in billing. */
 export interface BillingAccount {
+  id: string;
   handle: string;
   displayName: string;
   plan: string;
@@ -85,7 +92,9 @@ export interface BillingAccount {
 
 /** The two fixture upstreams, with their data open for tests to read and change. */
 export interface ConceptUpstreams {
+  /** Teams by id. */
   teams: Map<string, DirectoryTeam>;
+  /** Accounts by id. */
   accounts: Map<string, BillingAccount>;
   /** While true, billing refuses to open accounts. */
   billingRefusesOpen: boolean;
@@ -125,28 +134,29 @@ export function createConceptUpstreams(): ConceptUpstreams {
   const directory = createSchema({
     typeDefs: DIRECTORY_SDL,
     resolvers: {
-      Query: { team: (_: unknown, args: { slug: string }) => teams.get(args.slug) ?? null },
+      Query: { team: (_: unknown, args: { id: string }) => teams.get(args.id) ?? null },
       Mutation: {
-        addTeam: (_: unknown, args: { input: { slug: string; name: string } }) => {
-          if (teams.has(args.input.slug)) {
-            throw new GraphQLError(`The team ${args.input.slug} exists.`);
+        addTeam: (_: unknown, args: { input: { id: string; slug: string; name: string } }) => {
+          if (teams.has(args.input.id)) {
+            throw new GraphQLError(`The team ${args.input.id} exists.`);
           }
           const team = { ...args.input, memberCount: 0 };
-          teams.set(team.slug, team);
+          teams.set(team.id, team);
           return team;
         },
-        renameTeam: (_: unknown, args: { slug: string; name: string }) => {
-          const team = teams.get(args.slug);
+        renameTeam: (_: unknown, args: { id: string; name?: string | null; slug?: string | null }) => {
+          const team = teams.get(args.id);
           if (team === undefined) {
             return null;
           }
-          team.name = args.name;
+          team.name = args.name ?? team.name;
+          team.slug = args.slug ?? team.slug;
           return team;
         },
-        removeTeam: (_: unknown, args: { slug: string }) => {
-          const wasRemoved = teams.delete(args.slug);
+        removeTeam: (_: unknown, args: { id: string }) => {
+          const wasRemoved = teams.delete(args.id);
           if (wasRemoved === false) {
-            throw new GraphQLError(`No team ${args.slug}.`);
+            throw new GraphQLError(`No team ${args.id}.`);
           }
           return true;
         },
@@ -165,32 +175,38 @@ export function createConceptUpstreams(): ConceptUpstreams {
   const billing = createSchema({
     typeDefs: BILLING_SDL,
     resolvers: {
-      Query: { account: (_: unknown, args: { handle: string }) => accounts.get(args.handle) ?? null },
+      Query: { account: (_: unknown, args: { id: string }) => accounts.get(args.id) ?? null },
       Mutation: {
         openAccount: (
           _: unknown,
-          args: { input: { handle: string; displayName: string; plan: string; limits?: { seats: number } | null } },
+          args: {
+            input: { id: string; handle: string; displayName: string; plan: string; limits?: { seats: number } | null };
+          },
         ) => {
           if (upstreams.billingRefusesOpen) {
             throw new GraphQLError('Billing is closed for new accounts.');
           }
           const { limits, ...rest } = args.input;
           const account = { ...rest, seats: limits?.seats ?? null };
-          accounts.set(account.handle, account);
+          accounts.set(account.id, account);
           return account;
         },
-        changeAccount: (_: unknown, args: { handle: string; displayName?: string | null; plan?: string | null }) => {
-          const account = accounts.get(args.handle);
+        changeAccount: (
+          _: unknown,
+          args: { id: string; handle?: string | null; displayName?: string | null; plan?: string | null },
+        ) => {
+          const account = accounts.get(args.id);
           if (account === undefined) {
             return null;
           }
+          account.handle = args.handle ?? account.handle;
           account.displayName = args.displayName ?? account.displayName;
           account.plan = args.plan ?? account.plan;
           return account;
         },
-        closeAccount: (_: unknown, args: { handle: string }) => {
-          const account = accounts.get(args.handle) ?? null;
-          accounts.delete(args.handle);
+        closeAccount: (_: unknown, args: { id: string }) => {
+          const account = accounts.get(args.id) ?? null;
+          accounts.delete(args.id);
           return account;
         },
       },
@@ -234,7 +250,7 @@ export function teamConcept(name = 'Team'): Concept {
   return {
     name,
     fields: [
-      { name: 'slug', mode: 'key' },
+      { name: 'slug', mode: 'shared' },
       { name: 'name', mode: 'shared' },
       { name: 'plan', mode: 'owned', owner: 'billing' },
       { name: 'limits', mode: 'owned', owner: 'billing' },
@@ -243,27 +259,32 @@ export function teamConcept(name = 'Team'): Concept {
       {
         upstream: 'directory',
         documents: {
-          fetch: 'query ($key: String!) { team(slug: $key) { slug name memberCount } }',
-          create: 'mutation ($slug: String!, $name: String!) { addTeam(input: { slug: $slug, name: $name }) { slug } }',
-          update: 'mutation ($key: String!, $name: String!) { renameTeam(slug: $key, name: $name) { slug } }',
-          delete: 'mutation ($key: String!) { removeTeam(slug: $key) }',
+          fetch: 'query ($id: ID!) { team(id: $id) { id slug name memberCount } }',
+          create: [
+            'mutation ($id: ID!, $slug: String!, $name: String!) {',
+            '  addTeam(input: { id: $id, slug: $slug, name: $name }) { id }',
+            '}',
+          ].join('\n'),
+          update:
+            'mutation ($id: ID!, $slug: String, $name: String) { renameTeam(id: $id, slug: $slug, name: $name) { id } }',
+          delete: 'mutation ($id: ID!) { removeTeam(id: $id) }',
         },
       },
       {
         upstream: 'billing',
         documents: {
-          fetch: 'query ($key: String!) { account(handle: $key) { slug: handle name: displayName plan seats } }',
+          fetch: 'query ($id: ID!) { account(id: $id) { id slug: handle name: displayName plan seats } }',
           create: [
-            'mutation OpenAccount($key: String!, $name: String!, $plan: Plan!, $limits: LimitsInput) {',
-            '  openAccount(input: { handle: $key, displayName: $name, plan: $plan, limits: $limits }) { handle }',
+            'mutation OpenAccount($id: ID!, $slug: String!, $name: String!, $plan: Plan!, $limits: LimitsInput) {',
+            '  openAccount(input: { id: $id, handle: $slug, displayName: $name, plan: $plan, limits: $limits }) { id }',
             '}',
           ].join('\n'),
           update: [
-            'mutation ($key: String!, $name: String, $plan: Plan) {',
-            '  changeAccount(handle: $key, displayName: $name, plan: $plan) { handle }',
+            'mutation ($id: ID!, $slug: String, $name: String, $plan: Plan) {',
+            '  changeAccount(id: $id, handle: $slug, displayName: $name, plan: $plan) { id }',
             '}',
           ].join('\n'),
-          delete: 'mutation ($key: String!) { closeAccount(handle: $key) { handle } }',
+          delete: 'mutation ($id: ID!) { closeAccount(id: $id) { id } }',
         },
       },
     ],
