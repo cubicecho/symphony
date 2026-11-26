@@ -1,10 +1,17 @@
 // The two spike tracks together: a concept subgraph generated from concept rows, served in-process by the unified
-// gateway beside the upstreams it writes to, so one endpoint reads the merged entity and writes it everywhere.
+// gateway beside the upstreams it writes to, with every source's wiring generated from the concept, so one endpoint
+// reads the merged entity and writes it everywhere.
 import { conceptSchema } from '../../server/concepts/concept.ts';
 import { createConceptSubgraph } from '../../server/concepts/subgraph.ts';
 import { composeSupergraph } from '../../server/gateway/compose.ts';
 import { createUnifiedGateway, type UnifiedGateway } from '../../server/gateway/gateway.ts';
 import type { Source } from '../../server/gateway/sources.ts';
+import {
+  applyWiringOverrides,
+  CONCEPT_SOURCE_NAME,
+  deriveWiring,
+  sourceWiringFields,
+} from '../../server/gateway/wiring.ts';
 import {
   BILLING_SDL,
   CONCEPT_SCHEMAS,
@@ -35,37 +42,41 @@ let upstreams: ConceptUpstreams;
 let gateway: UnifiedGateway;
 
 /**
- * Describes the fixture upstreams and the generated concept subgraph as gateway sources, all merging into `Team`.
+ * Describes the fixture upstreams and the generated concept subgraph as gateway sources, wired from the concept.
  *
  * @returns The sources.
  */
 function sources(): Source[] {
   const concept = conceptSchema.parse(teamConcept());
+  const derived = deriveWiring([concept], CONCEPT_SCHEMAS);
+  expect(derived.problems).toEqual([]);
+  const wiring = (upstream: string) => {
+    const found = applyWiringOverrides(derived.wiring, []).find((one) => one.upstream === upstream);
+    if (found === undefined) {
+      throw new Error(`No wiring was generated for ${upstream}.`);
+    }
+    return sourceWiringFields(found);
+  };
   return [
     {
       name: 'directory',
       kind: 'graphql',
       endpoint: conceptUpstreamUrl('directory'),
       sdl: DIRECTORY_SDL,
-      mergeKeys: [{ type: 'Team', keyField: 'id', lookupField: 'team' }],
+      ...wiring('directory'),
     },
     {
       name: 'billing',
       kind: 'graphql',
       endpoint: conceptUpstreamUrl('billing'),
       sdl: BILLING_SDL,
-      renames: {
-        types: { Account: 'Team' },
-        fields: { 'Account.handle': 'slug', 'Account.displayName': 'name', 'Query.account': 'billingTeam' },
-      },
-      mergeKeys: [{ type: 'Team', keyField: 'id', lookupField: 'billingTeam' }],
+      ...wiring('billing'),
     },
     {
-      name: 'concepts',
+      name: CONCEPT_SOURCE_NAME,
       kind: 'schema',
       schema: createConceptSubgraph([concept], CONCEPT_SCHEMAS, upstreams.execute),
-      renames: { fields: { 'Query.team': 'conceptTeam' } },
-      mergeKeys: [{ type: 'Team', keyField: 'id', lookupField: 'conceptTeam' }],
+      ...wiring(CONCEPT_SOURCE_NAME),
     },
   ];
 }
