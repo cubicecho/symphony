@@ -26,21 +26,34 @@ describe('conceptSchema', () => {
     expect(conceptSchema.safeParse(teamConcept()).success).toBe(true);
   });
 
-  it('refuses two key fields, a foreign owner and a repeated member', () => {
+  it('refuses a field called id, a foreign owner and a repeated member', () => {
     const concept = teamConcept();
     const broken = {
       ...concept,
-      fields: [...concept.fields, { name: 'id', mode: 'key' }, { name: 'tax', mode: 'owned', owner: 'payroll' }],
+      fields: [...concept.fields, { name: 'id', mode: 'shared' }, { name: 'tax', mode: 'owned', owner: 'payroll' }],
       members: [...concept.members, concept.members[0]],
     };
     const result = conceptSchema.safeParse(broken);
     const messages = result.error?.issues.map((issue) => issue.message) ?? [];
     expect(messages).toEqual([
-      'A concept has exactly one key field; this one has 2.',
       'The upstream "directory" is listed as a member more than once.',
+      'No field may be called "id": every concept has it already, as the entity\'s Symphony UUID.',
       'The field "tax" is owned by "payroll", which is not a member.',
       'Two members\' upstream names both become the argument "directory".',
     ]);
+  });
+
+  it('has no key mode any more: the id is implicit', () => {
+    const concept = teamConcept();
+    const withKey = { ...concept, fields: [{ name: 'slug', mode: 'key' }, ...concept.fields.slice(1)] };
+    expect(conceptSchema.safeParse(withKey).success).toBe(false);
+  });
+
+  it('refuses a member named id, since the mutations take that argument', () => {
+    const concept = teamConcept();
+    const renamed = { ...concept, members: [{ ...concept.members[0], upstream: 'id' }, concept.members[1]] };
+    const messages = conceptSchema.safeParse(renamed).error?.issues.map((issue) => issue.message) ?? [];
+    expect(messages).toContain('The upstream name "id" becomes the argument "id", which the mutations use already.');
   });
 });
 
@@ -53,7 +66,7 @@ describe('validateConcept', () => {
     const concept = withDocument(
       'directory',
       'fetch',
-      'query ($key: String!) {\n  team(slug: $key) { slug name colour }\n}',
+      'query ($id: ID!) {\n  team(id: $id) { id slug name colour }\n}',
     );
     expect(validateConcept(concept, CONCEPT_SCHEMAS)).toEqual([
       {
@@ -73,7 +86,7 @@ describe('validateConcept', () => {
   });
 
   it('refuses a document of the wrong operation type', () => {
-    const concept = withDocument('directory', 'delete', 'query ($key: String!) { team(slug: $key) { slug } }');
+    const concept = withDocument('directory', 'delete', 'query ($id: ID!) { team(id: $id) { id } }');
     expect(validateConcept(concept, CONCEPT_SCHEMAS)).toEqual([
       expect.objectContaining({
         operation: 'delete',
@@ -87,14 +100,14 @@ describe('validateConcept', () => {
     const concept = withDocument(
       'billing',
       'update',
-      'mutation ($key: String!, $label: String!) { changeAccount(handle: $key, displayName: $label) { handle } }',
+      'mutation ($id: ID!, $label: String!) { changeAccount(id: $id, displayName: $label) { id } }',
     );
     const problems = validateConcept(concept, CONCEPT_SCHEMAS);
     expect(problems).toContainEqual(
       expect.objectContaining({
         message: expect.stringMatching(/^\$label is required but binds nothing/),
         line: 1,
-        column: 26,
+        column: 21,
       }),
     );
   });
@@ -103,7 +116,7 @@ describe('validateConcept', () => {
     const concept = withDocument(
       'billing',
       'update',
-      'mutation ($key: String!, $name: String, $tier: Plan) { changeAccount(handle: $key, displayName: $name, plan: $tier) { handle } }',
+      'mutation ($id: ID!, $slug: String, $name: String, $tier: Plan) { changeAccount(id: $id, handle: $slug, displayName: $name, plan: $tier) { id } }',
     );
     expect(validateConcept(concept, CONCEPT_SCHEMAS)).toEqual([]);
   });
@@ -112,38 +125,64 @@ describe('validateConcept', () => {
     const concept = withDocument(
       'directory',
       'update',
-      'mutation ($key: String!, $name: String!, $plan: String!) { renameTeam(slug: $key, name: $plan) { slug } }',
+      'mutation ($id: ID!, $slug: String, $name: String, $plan: String) { renameTeam(id: $id, slug: $slug, name: $plan) { id } }',
     );
     expect(validateConcept(concept, CONCEPT_SCHEMAS).map((problem) => problem.message)).toContain(
       '$plan binds "plan", which billing owns, not directory.',
     );
   });
 
-  it('wants the key in every document and every shared field in creates and updates', () => {
+  it.each(['fetch', 'create', 'update', 'delete'] as const)('wants $id in the %s document', (operation) => {
+    const concept = teamConcept();
+    const directory = concept.members[0]?.documents[operation] ?? '';
+    const withoutId = directory.replace('$id: ID!', '$ref: ID').replaceAll('id: $id', 'id: $ref');
+    const problems = validateConcept(withDocument('directory', operation, withoutId), CONCEPT_SCHEMAS);
+    expect(problems.map((problem) => problem.message)).toContain(
+      `A ${operation} document binds the entity's Symphony UUID as $id, declared ID! or String!.`,
+    );
+  });
+
+  it('wants $id declared ID! or String!', () => {
+    const concept = withDocument('directory', 'delete', 'mutation ($id: ID) { removeTeam(id: $id) }');
+    expect(validateConcept(concept, CONCEPT_SCHEMAS).map((problem) => problem.message)).toContain(
+      "$id is declared ID! or String!, since every delete needs the entity's UUID; this one is ID.",
+    );
+  });
+
+  it('wants every shared field in creates and updates', () => {
     const concept = withDocument(
       'directory',
       'create',
-      'mutation ($name: String!) { addTeam(input: { slug: "x", name: $name }) { slug } }',
-    );
-    const fetchMissing = withDocument(
-      'billing',
-      'fetch',
-      'query ($key: String!) { account(handle: $key) { handle plan } }',
+      'mutation ($id: ID!, $name: String!) { addTeam(input: { id: $id, slug: "x", name: $name }) { id } }',
     );
     expect(validateConcept(concept, CONCEPT_SCHEMAS).map((problem) => problem.message)).toEqual([
-      'A create document binds the key, as $key or $slug.',
+      'A create document binds every shared field, since each member stores it; $slug is missing.',
     ]);
+  });
+
+  it('wants the fetch to select the id and every shared field', () => {
+    const fetchMissing = withDocument('billing', 'fetch', 'query ($id: ID!) { account(id: $id) { handle plan } }');
     expect(validateConcept(fetchMissing, CONCEPT_SCHEMAS).map((problem) => problem.message)).toEqual([
+      'The fetch selects the entity\'s id as "id" directly under account, since the gateway merges on it; alias the upstream\'s field if it is called something else (id: uuid).',
       'The fetch selects "slug" directly under account; alias the upstream\'s field to that name if it differs.',
       'The fetch selects "name" directly under account; alias the upstream\'s field to that name if it differs.',
     ]);
+  });
+
+  it('takes an id the fetch selects under an alias', () => {
+    const aliased = withDocument(
+      'billing',
+      'fetch',
+      'query ($id: ID!) { account(id: $id) { id: handle slug: handle name: displayName } }',
+    );
+    expect(validateConcept(aliased, CONCEPT_SCHEMAS)).toEqual([]);
   });
 
   it('wants a shared field to have one built-in scalar type everywhere', () => {
     const concept = withDocument(
       'billing',
       'update',
-      'mutation ($key: String!, $name: Int, $plan: Plan) { changeAccount(handle: $key, displayName: $name, plan: $plan) { handle } }',
+      'mutation ($id: ID!, $slug: String, $name: Int, $plan: Plan) { changeAccount(id: $id, handle: $slug, displayName: $name, plan: $plan) { id } }',
     );
     const problems = validateConcept(concept, CONCEPT_SCHEMAS);
     expect(problems.map((problem) => problem.message)).toContain(

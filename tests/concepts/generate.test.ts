@@ -21,10 +21,10 @@ function typeSdl(schema: GraphQLSchema, name: string): string {
 describe('generateConceptSdl', () => {
   const schema = buildSchema(generateConceptSdl([teamConcept()], CONCEPT_SCHEMAS));
 
-  it('takes the key and shared fields from the create variables', () => {
-    expect(typeSdl(schema, 'TeamShared')).toContain('slug: String!\n  name: String!\n}');
-    expect(typeSdl(schema, 'TeamSharedPatch')).toContain('name: String\n}');
-    expect(typeSdl(schema, 'Team')).toContain('slug: String!\n  name: String\n');
+  it('keys the entity by an ID and takes the shared fields from the create variables', () => {
+    expect(typeSdl(schema, 'TeamShared')).toContain('{\n  slug: String!\n  name: String!\n}');
+    expect(typeSdl(schema, 'TeamSharedPatch')).toContain('{\n  slug: String\n  name: String\n}');
+    expect(typeSdl(schema, 'Team')).toMatch(/id: ID!\n {2}slug: String\n {2}name: String\n/);
   });
 
   it("types a member's own input from its documents, copying upstream types under its prefix", () => {
@@ -42,18 +42,21 @@ describe('generateConceptSdl', () => {
     expect(typeSdl(schema, 'TeamPresence')).toContain(
       'app: TeamApp!\n  status: PresenceStatus!\n  drift: [FieldDrift!]!',
     );
-    expect(typeSdl(schema, 'TeamWriteResult')).toContain('key: String!\n  results: [AppWriteResult!]!');
+    expect(typeSdl(schema, 'TeamWriteResult')).toMatch(/id: ID!\n {2}results: \[AppWriteResult!\]!/);
     const mutations = schema.getMutationType()?.getFields() ?? {};
     const signature = (name: string) => mutations[name]?.args.map((arg) => `${arg.name}: ${arg.type}`);
-    expect(schema.getQueryType()?.getFields().team?.type.toString()).toBe('Team');
-    expect(signature('createTeam')).toEqual(['shared: TeamShared!', 'billing: TeamBillingOwn', 'in: [TeamApp!]!']);
-    expect(signature('updateTeam')).toEqual([
-      'key: String!',
-      'shared: TeamSharedPatch',
-      'billing: TeamBillingOwnPatch',
+    const team = schema.getQueryType()?.getFields().team;
+    expect(team?.type.toString()).toBe('Team');
+    expect(team?.args.map((arg) => `${arg.name}: ${arg.type}`)).toEqual(['id: ID!']);
+    expect(signature('createTeam')).toEqual([
+      'id: ID',
+      'shared: TeamShared!',
+      'billing: TeamBillingOwn',
+      'in: [TeamApp!]!',
     ]);
-    expect(signature('attachTeam')).toEqual(['key: String!', 'app: TeamApp!', 'own: JSON']);
-    expect(signature('deleteTeam')).toEqual(['key: String!']);
+    expect(signature('updateTeam')).toEqual(['id: ID!', 'shared: TeamSharedPatch', 'billing: TeamBillingOwnPatch']);
+    expect(signature('attachTeam')).toEqual(['id: ID!', 'app: TeamApp!', 'own: JSON']);
+    expect(signature('deleteTeam')).toEqual(['id: ID!']);
   });
 
   it('composes several concepts into one schema without clashes', () => {

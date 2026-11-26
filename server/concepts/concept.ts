@@ -1,12 +1,11 @@
 // A concept: one domain entity (a Team, say) that lives in several upstreams and is read and written as one.
-// It is data: which field identifies it everywhere, which fields every member shares, which one member owns,
-// and per member the GraphQL documents that fetch, create, update and delete it in that upstream's own schema.
+// It is data: which fields every member shares, which one member owns, and per member the GraphQL documents
+// that fetch, create, update and delete it in that upstream's own schema. Every entity is identified by one
+// Symphony UUID, its `id`, which every member stores as its own id; no concept declares it as a field.
 import { z } from 'zod';
 
 /** How a concept field is written and read. */
 export const FieldMode = {
-  /** Identifies the entity in every member. Written to all of them at create, never changed. */
-  Key: 'key',
   /** Written to every member, and compared across them for drift on read. */
   Shared: 'shared',
   /** Lives in exactly one member, its owner. */
@@ -26,17 +25,39 @@ export type ConceptOperation = (typeof ConceptOperation)[keyof typeof ConceptOpe
 /** Every operation, in the order problems are reported. */
 export const CONCEPT_OPERATIONS: readonly ConceptOperation[] = Object.values(ConceptOperation);
 
-/** The variable name every document may use for the key, whatever the key field is called. */
-export const KEY_VARIABLE = 'key';
+/** The field of the generated concept type, and the argument, that hold the entity's Symphony UUID. */
+export const ID_FIELD = 'id';
+
+/** The variable every member document binds the entity's id to, as `$id`. */
+export const ID_VARIABLE = 'id';
 
 /** The field of the generated concept type that lists each member's presence. */
 export const PRESENCE_FIELD = 'presence';
 
 /** Argument names the generated mutations take for themselves, so no member's argument may use them. */
-const RESERVED_ARGUMENTS = new Set(['key', 'shared', 'in', 'app', 'own']);
+const RESERVED_ARGUMENTS = new Set([ID_FIELD, 'shared', 'in', 'app', 'own']);
 
-/** Concept names whose generated query or types would clash with the subgraph's own (generate.ts). */
-const RESERVED_CONCEPT_NAMES = new Set(['Concepts', 'Query', 'Mutation', 'JSON', 'PresenceStatus', 'FieldDrift']);
+/** Concept names whose generated query or types would clash with the subgraph's own (generate.ts) or a scalar. */
+const RESERVED_CONCEPT_NAMES = new Set([
+  'Concepts',
+  'Query',
+  'Mutation',
+  'JSON',
+  'PresenceStatus',
+  'FieldDrift',
+  'AppWriteResult',
+  'ID',
+  'String',
+  'Int',
+  'Float',
+  'Boolean',
+]);
+
+/** Field names the generated concept type uses itself, with why, so no concept field may take them. */
+const RESERVED_FIELD_NAMES: ReadonlyMap<string, string> = new Map([
+  [ID_FIELD, "every concept has it already, as the entity's Symphony UUID"],
+  [PRESENCE_FIELD, 'the generated concept type uses it'],
+]);
 
 /** A GraphQL type name: the concept's name prefixes every generated type. */
 const TYPE_NAME = /^[A-Z][A-Za-z0-9]*$/;
@@ -47,7 +68,6 @@ const FIELD_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** What splits an upstream name into words: Symphony allows spaces, dots, dashes and underscores. */
 const WORD_SEPARATOR = /[\s._-]+/;
 
-const keyField = z.object({ name: z.string().regex(FIELD_NAME), mode: z.literal(FieldMode.Key) });
 const sharedField = z.object({ name: z.string().regex(FIELD_NAME), mode: z.literal(FieldMode.Shared) });
 const ownedField = z.object({
   name: z.string().regex(FIELD_NAME),
@@ -57,7 +77,7 @@ const ownedField = z.object({
 });
 
 /** One field of a concept. Its GraphQL type comes from the variables that bind it (validate.ts). */
-export const conceptFieldSchema = z.discriminatedUnion('mode', [keyField, sharedField, ownedField]);
+export const conceptFieldSchema = z.discriminatedUnion('mode', [sharedField, ownedField]);
 export type ConceptField = z.infer<typeof conceptFieldSchema>;
 
 /** One upstream's part in a concept: its documents, each written against that upstream's schema. */
@@ -65,7 +85,7 @@ export const conceptMemberSchema = z.object({
   /** The upstream's name. */
   upstream: z.string().min(1),
   documents: z.object({
-    /** A query with one root field: the entity, or null when this upstream has none for the key. */
+    /** A query with one root field: the entity, or null when this upstream has none with the id. */
     fetch: z.string().min(1),
     create: z.string().min(1),
     update: z.string().min(1),
@@ -99,10 +119,6 @@ export type Concept = z.infer<typeof conceptSchema>;
  */
 function conceptRuleBreaks(concept: Pick<Concept, 'fields' | 'members'>): string[] {
   const breaks: string[] = [];
-  const keyCount = concept.fields.filter((field) => field.mode === FieldMode.Key).length;
-  if (keyCount !== 1) {
-    breaks.push(`A concept has exactly one key field; this one has ${keyCount}.`);
-  }
   const memberNames = concept.members.map((member) => member.upstream);
   for (const name of duplicates(memberNames)) {
     breaks.push(`The upstream "${name}" is listed as a member more than once.`);
@@ -110,15 +126,11 @@ function conceptRuleBreaks(concept: Pick<Concept, 'fields' | 'members'>): string
   for (const name of duplicates(concept.fields.map((field) => field.name))) {
     breaks.push(`The field "${name}" is defined more than once.`);
   }
-  const misnamedField = concept.fields.find((field) => field.name === KEY_VARIABLE && field.mode !== FieldMode.Key);
-  if (misnamedField !== undefined) {
-    breaks.push(`Only the key field may be called "${KEY_VARIABLE}": documents bind $${KEY_VARIABLE} to the key.`);
-  }
-  const hasPresenceField = concept.fields.some((field) => field.name === PRESENCE_FIELD);
-  if (hasPresenceField) {
-    breaks.push(`No field may be called "${PRESENCE_FIELD}": the generated concept type uses it.`);
-  }
   for (const field of concept.fields) {
+    const reservedBecause = RESERVED_FIELD_NAMES.get(field.name);
+    if (reservedBecause !== undefined) {
+      breaks.push(`No field may be called "${field.name}": ${reservedBecause}.`);
+    }
     const hasOwner = field.mode === FieldMode.Owned && memberNames.includes(field.owner);
     if (field.mode === FieldMode.Owned && hasOwner === false) {
       breaks.push(`The field "${field.name}" is owned by "${field.owner}", which is not a member.`);
@@ -163,22 +175,7 @@ function duplicates(values: string[]): string[] {
 }
 
 /**
- * Finds a concept's key field.
- *
- * @param concept - A parsed concept, which has exactly one.
- * @returns The key field.
- * @throws When the concept has no key field, which means it skipped `conceptSchema`.
- */
-export function keyFieldOf(concept: Concept): ConceptField {
-  const key = concept.fields.find((field) => field.mode === FieldMode.Key);
-  if (key === undefined) {
-    throw new Error(`The concept ${concept.name} has no key field. Parse it with conceptSchema first.`);
-  }
-  return key;
-}
-
-/**
- * Lists the fields one member writes besides the key: every shared field, and the fields it owns.
+ * Lists the fields one member writes besides the id: every shared field, and the fields it owns.
  *
  * @param concept - The concept.
  * @param upstream - The member's upstream name.
