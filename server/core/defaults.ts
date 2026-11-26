@@ -137,3 +137,13 @@ export const MCP_DEFAULTS: Readonly<McpSettings> = Object.freeze({
   maxAnswerChars: 60_000,
   maxSearchResults: 40,
 });
+
+/** How the unified gateway (spike) swaps one supergraph for the next. */
+export interface GatewaySettings {
+  /** How long operations in flight at a swap get to finish on the old supergraph, in milliseconds. */
+  swapDrainMs: number;
+}
+
+export const GATEWAY_DEFAULTS: Readonly<GatewaySettings> = Object.freeze({
+  swapDrainMs: 10_000,
+});
