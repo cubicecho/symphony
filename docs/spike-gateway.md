@@ -125,14 +125,13 @@ not fail to load: it fails later, as a transform error, because the loader accep
 
 ## Dependencies
 
-Added, all pinned exactly: `@graphql-hive/gateway-runtime@3.0.0`, `@graphql-mesh/fusion-composition@0.11.4`,
-`@omnigraph/openapi@0.112.7`, `@graphql-mesh/transport-http@2.0.0`, `@graphql-mesh/transport-rest@0.12.5` and
-`@graphql-mesh/transport-common@2.0.0`. The runtime package was used instead of `@graphql-hive/gateway`, which is the
+Added, all pinned exactly: `@graphql-hive/gateway-runtime@2.14.4`, `@graphql-mesh/fusion-composition@0.11.4`,
+`@omnigraph/openapi@0.112.7`, `@graphql-mesh/transport-http@1.2.7`, `@graphql-mesh/transport-rest@0.12.5` and
+`@graphql-mesh/transport-common@1.1.3`. The runtime package was used instead of `@graphql-hive/gateway`, which is the
 CLI and pulls in more.
 
 The weight is 233 new entries in `package-lock.json` (94 top-level installs) and about 84 MB on disk. No existing
-package changed version. The runtime brings its own `graphql-yoga@6` next to Symphony's yoga 5, nested under
-`@graphql-hive/gateway-runtime` and `@graphql-mesh/fusion-runtime`. graphql 16 is fine: the peer range is
+package changed version. The 2.14 line shares Symphony's `graphql-yoga@5` (deduped), so no second yoga is installed. graphql 16 is fine: the peer range is
 `^16.9 || ^17`. `@apollo/protobufjs` arrives with an install script, which npm's `allowScripts` blocks. Nothing
 here needs it.
 
@@ -140,11 +139,11 @@ here needs it.
 
 - **The compose CLI cannot run inside a server.** `getComposedSchemaFromConfig` calls `process.exit(1)` on a load or
   composition failure, so `fusion-composition` is used directly and `additionalTypeDefs` is re-implemented (see 2).
-- **Version skew.** `@graphql-hive/gateway-runtime@3.0.0` was released the day of the spike. The REST transport
-  (`transport-rest@0.12.5`, the latest) is still built on `transport-common@1`. It reads a Mesh `logger` that
-  Gateway 3 no longer passes, and its types name a second copy of `@graphql-hive/logger`. `server/gateway/transports.ts`
-  adapts it: it passes a logger and uses one documented cast. Gateway 2.14.x would avoid the skew but brings yoga 5.
-  Re-check this before building on it.
+- **Version skew (resolved by pinning).** The spike first used `@graphql-hive/gateway-runtime@3.0.0`, released the day of
+  the spike, but the REST transport (`transport-rest@0.12.5`, the latest) is still built on `transport-common@1`,
+  which needed a logger adapter and a cast. Symphony now pins the mature 2.14 line (`gateway-runtime@2.14.4`,
+  `transport-http@1.2.7`, `transport-common@1.1.3`), where every transport shares one `transport-common` and no
+  adapter is needed. Move to 3.x once `transport-rest` is built on `transport-common@2`.
 - **Merged types must be shareable.** Composition is Federation 2 semantics. Every type that is merged is marked
   `@shareable` in every source, which also hides genuine conflicts on non-key fields (two sources both claiming
   `name` with different meanings). Renames are the only guard against that.
