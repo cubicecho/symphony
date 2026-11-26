@@ -1,6 +1,5 @@
 // The unified API through the whole app: a concept saved over the admin API recomposes the gateway, and
-// /unified/graphql then serves it beside its member upstream. wiring.ts is still a stub, so the app runs
-// FAKE_WIRING_FUNCTIONS; once it is implemented, drop `wiringFunctions` below.
+// /unified/graphql then serves it merged with its member upstream, wired from the concept.
 import type { AddressInfo } from 'node:net';
 import { sql } from 'drizzle-orm';
 import { ErrorCode } from '../../server/core/errors.ts';
@@ -9,13 +8,7 @@ import type { UnifiedGatewayService } from '../../server/gateway/unified-service
 import { CONCEPT_SOURCE_NAME } from '../../server/gateway/wiring.ts';
 import { createApp } from '../../server/http/app.ts';
 import { openTestDatabase } from '../db.ts';
-import {
-  createMemoUpstream,
-  FAKE_WIRING_FUNCTIONS,
-  MEMO_UPSTREAM,
-  MEMO_URL,
-  noteConcept,
-} from '../fixtures/memo-upstream.ts';
+import { createMemoUpstream, MEMO_UPSTREAM, MEMO_URL, noteConcept } from '../fixtures/memo-upstream.ts';
 
 let opened: OpenedDatabase;
 let unified: UnifiedGatewayService;
@@ -49,7 +42,6 @@ beforeAll(async () => {
     mcpKey: 'test-key',
     checkDatabase: () => opened.db.execute(sql`select 1`),
     fetch: createMemoUpstream().fetch,
-    wiringFunctions: FAKE_WIRING_FUNCTIONS,
   });
   unified = built.unified;
   const server = built.app.listen(0);
@@ -109,8 +101,9 @@ describe('the unified API', () => {
       { name: MEMO_UPSTREAM, kind: 'graphql' },
       { name: CONCEPT_SOURCE_NAME, kind: 'schema' },
     ]);
-    const served = await post('/unified/graphql', '{ concepts noteType: __type(name: "Note") { name } memos { id } }');
-    expect(served.body).toEqual({ data: { concepts: ['Note'], noteType: { name: 'Note' }, memos: [{ id: 'm1' }] } });
+    const served = await post('/unified/graphql', '{ concepts memos { id __typename } }');
+    // The generated wiring renamed the member's Memo to Note, so the upstream's memos are the concept's entity.
+    expect(served.body).toEqual({ data: { concepts: ['Note'], memos: [{ id: 'm1', __typename: 'Note' }] } });
   });
 
   it('lists concepts and the effective wiring over the admin API', async () => {
@@ -120,22 +113,22 @@ describe('the unified API', () => {
     );
     expect(body.data.concepts).toEqual([{ name: 'Note', servable: true }]);
     expect(body.data.concept.definition).toEqual(noteConcept());
-    expect(body.data.sourceWiring).toEqual([{ source: MEMO_UPSTREAM, override: null }]);
+    expect(body.data.sourceWiring).toEqual([
+      { source: MEMO_UPSTREAM, override: null },
+      { source: CONCEPT_SOURCE_NAME, override: null },
+    ]);
   });
 
   it('sets and clears a wiring override over the admin API', async () => {
     const set = await post(
       '/graphql',
-      'mutation($o: JSON!) { setWiringOverride(source: "field notes", override: $o) { source renames { types { from to } } } }',
-      { o: { renames: { types: { Memo: 'FieldMemo' } } } },
+      'mutation($o: JSON!) { setWiringOverride(source: "field notes", override: $o) { source renames { fields { from to } } } }',
+      { o: { renames: { fields: { 'Query.memos': 'allNotes' } } } },
     );
-    expect(set.body.data.setWiringOverride).toEqual({
-      source: MEMO_UPSTREAM,
-      renames: { types: [{ from: 'Memo', to: 'FieldMemo' }] },
-    });
+    expect(set.body.data.setWiringOverride.renames.fields).toContainEqual({ from: 'Query.memos', to: 'allNotes' });
     await unified.whenIdle();
-    const renamed = await post('/unified/graphql', '{ memos { __typename } }');
-    expect(renamed.body).toEqual({ data: { memos: [{ __typename: 'FieldMemo' }] } });
+    const renamed = await post('/unified/graphql', '{ allNotes { __typename } }');
+    expect(renamed.body).toEqual({ data: { allNotes: [{ __typename: 'Note' }] } });
     const cleared = await post('/graphql', 'mutation { clearWiringOverride(source: "field notes") }');
     expect(cleared.body.data.clearWiringOverride).toBe(true);
   });

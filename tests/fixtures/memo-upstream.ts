@@ -3,8 +3,6 @@
 import { buildSchema, type GraphQLSchema } from 'graphql';
 import { createSchema, createYoga } from 'graphql-yoga';
 import type { Upstream } from '../../server/core/services.ts';
-import type { EffectiveWiring, SourceWiring } from '../../server/gateway/wiring.ts';
-import type { WiringServiceDeps } from '../../server/gateway/wiring-service.ts';
 
 /** The memo upstream's SDL. */
 export const MEMO_SDL = /* GraphQL */ `
@@ -99,8 +97,7 @@ export function createMemoUpstream(): MemoUpstream {
 }
 
 /**
- * A concept over the memo upstream, in today's definition shape with the entity bound by `$id`.
- * After the Symphony-UUID track merges, only this builder should need to change.
+ * A concept over the memo upstream: the entity's Symphony id is bound by `$id`, and `title` is shared.
  *
  * @param [name] - The concept's name.
  * @param [documents] - Member documents to replace.
@@ -114,10 +111,7 @@ export function noteConcept(
 ): Record<string, unknown> {
   return {
     name,
-    fields: [
-      { name: 'id', mode: 'key' },
-      { name: 'title', mode: 'shared' },
-    ],
+    fields: [{ name: 'title', mode: 'shared' }],
     members: [
       {
         upstream,
@@ -151,36 +145,3 @@ export function cachedUpstream(name: string, sdl: string, headers: Upstream['hea
     schema: { schema, sdl, hash: name, typeCount: 1, fetchedAt: new Date() },
   };
 }
-
-/**
- * Wiring functions standing in for wiring.ts while it is a stub: no generated renames or keys, one empty wiring per
- * member upstream, and overrides laid over it entry by entry. Tests switch to the real ones by dropping these.
- */
-export const FAKE_WIRING_FUNCTIONS: Required<Pick<WiringServiceDeps, 'deriveWiring' | 'applyWiringOverrides'>> = {
-  deriveWiring: (concepts) => ({
-    wiring: [...new Set(concepts.flatMap((concept) => concept.members.map((member) => member.upstream)))].map(
-      (upstream): SourceWiring => ({ upstream, renames: { types: {}, fields: {} }, mergeKeys: [] }),
-    ),
-    problems: [],
-  }),
-  applyWiringOverrides: (generated, overrides) => {
-    const sources = [...new Set([...generated.map((one) => one.upstream), ...overrides.map((one) => one.upstream)])];
-    return sources.map((upstream): EffectiveWiring => {
-      const base = generated.find((one) => one.upstream === upstream) ?? null;
-      const override = overrides.find((one) => one.upstream === upstream) ?? null;
-      const kept = (renames: Readonly<Record<string, string | null>> = {}) =>
-        Object.fromEntries(Object.entries(renames).filter((entry): entry is [string, string] => entry[1] !== null));
-      return {
-        upstream,
-        renames: {
-          types: { ...base?.renames.types, ...kept(override?.renames?.types) },
-          fields: { ...base?.renames.fields, ...kept(override?.renames?.fields) },
-        },
-        mergeKeys: [...(base?.mergeKeys ?? []), ...(override?.mergeKeys ?? [])],
-        generated: base,
-        override,
-        origins: {},
-      };
-    });
-  },
-};

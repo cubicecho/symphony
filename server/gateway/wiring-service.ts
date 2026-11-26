@@ -19,9 +19,15 @@ import {
 import type { Database } from '../db/client.ts';
 import { wiringOverrides } from '../db/schema.ts';
 import { schemasByName } from './concept-service.ts';
-import { applyWiringOverrides, CONCEPT_SOURCE_NAME, deriveWiring, type WiringOverride } from './wiring.ts';
+import {
+  applyWiringOverrides,
+  CONCEPT_SOURCE_NAME,
+  deriveWiring,
+  type WiringOverride,
+  wiringOverrideSchema,
+} from './wiring.ts';
 
-/** What the service talks to, and the wiring functions it runs (tests pass fakes while wiring.ts is a stub). */
+/** What the service talks to. */
 export interface WiringServiceDeps {
   db: Database;
   concepts: ConceptService;
@@ -30,51 +36,10 @@ export interface WiringServiceDeps {
   changes?: EventFeed<SourcesChange>;
   /** Followed so overrides move with renames and go with removed upstreams. */
   upstreamEvents?: EventFeed<UpstreamEvent>;
-  /** @defaultValue wiring.ts's deriveWiring */
-  deriveWiring?: typeof deriveWiring;
-  /** @defaultValue wiring.ts's applyWiringOverrides */
-  applyWiringOverrides?: typeof applyWiringOverrides;
 }
 
-/** A rename map: a null value removes the generated rename. */
-const renameMap = z.record(z.string().min(1), z.string().min(1).nullable());
-
-/** `SourceType.field`, as field renames are keyed. */
-const FIELD_COORDINATE = /^[^.\s]+\.[^.\s]+$/;
-
-/**
- * The shape a submitted override must have. A stand-in for wiring.ts's `wiringOverrideSchema` until it exports one.
- */
-const wiringOverrideInput = z
-  .object({
-    upstream: z.string().min(1).optional(),
-    renames: z
-      .object({
-        types: renameMap.optional(),
-        fields: renameMap
-          .refine(
-            (fields) => Object.keys(fields).every((coordinate) => FIELD_COORDINATE.test(coordinate)),
-            'Field renames are keyed `SourceType.field`.',
-          )
-          .optional(),
-      })
-      .strict()
-      .optional(),
-    mergeKeys: z
-      .array(
-        z
-          .object({
-            type: z.string().min(1),
-            keyField: z.string().min(1),
-            lookupField: z.string().min(1),
-            keyArg: z.string().min(1).optional(),
-          })
-          .strict(),
-      )
-      .optional(),
-    removeMergeKeys: z.array(z.string().min(1)).optional(),
-  })
-  .strict();
+/** A submitted override: wiring.ts's schema, with `upstream` optional because the source it is set for names it. */
+const wiringOverrideInput = wiringOverrideSchema.extend({ upstream: z.string().min(1).optional() }).strict();
 
 /**
  * Checks a submitted override and names it for its source.
@@ -100,13 +65,11 @@ function parseOverride(source: string, value: unknown): WiringOverride {
 /**
  * Builds the wiring service, and makes overrides follow their upstreams.
  *
- * @param deps - The database, concepts, upstreams, feeds and wiring functions.
+ * @param deps - The database, concepts, upstreams and feeds.
  * @returns The service.
  */
 export function createWiringService(deps: WiringServiceDeps): WiringService {
   const { db } = deps;
-  const derive = deps.deriveWiring ?? deriveWiring;
-  const apply = deps.applyWiringOverrides ?? applyWiringOverrides;
 
   const effective = async (): Promise<WiringState> => {
     const [records, upstreams, rows] = await Promise.all([
@@ -117,11 +80,9 @@ export function createWiringService(deps: WiringServiceDeps): WiringService {
     const servable = records.flatMap((record) =>
       record.concept !== null && record.problems.length === 0 ? [record.concept] : [],
     );
-    // With nothing to generate from and nothing overridden there is no wiring, so neither function needs to run.
-    const derived = servable.length === 0 ? { wiring: [], problems: [] } : derive(servable, schemasByName(upstreams));
+    const derived = deriveWiring(servable, schemasByName(upstreams));
     const overrides = rows.map((row) => row.override);
-    const isUnwired = derived.wiring.length === 0 && overrides.length === 0;
-    return { wiring: isUnwired ? [] : apply(derived.wiring, overrides), problems: derived.problems };
+    return { wiring: applyWiringOverrides(derived.wiring, overrides), problems: derived.problems };
   };
 
   const find = async (source: string) => {

@@ -12,7 +12,7 @@ import { HttpStatus } from '../core/wire.ts';
 import type { Database } from '../db/client.ts';
 import { createConceptService } from '../gateway/concept-service.ts';
 import { createUnifiedService, UNIFIED_ENDPOINT, type UnifiedGatewayService } from '../gateway/unified-service.ts';
-import { createWiringService, type WiringServiceDeps } from '../gateway/wiring-service.ts';
+import { createWiringService } from '../gateway/wiring-service.ts';
 import { graphqlLogger } from '../graphql/logger.ts';
 import { useOperationLimits } from '../graphql/operation-limits.ts';
 import { buildSchema, type Context } from '../graphql/schema.ts';
@@ -42,8 +42,6 @@ export interface AppDeps extends Partial<Omit<Services, 'unified'>> {
   fetch?: typeof fetch;
   /** The built web app's directory. Left out in tests. */
   dist?: string;
-  /** The wiring functions, for tests while wiring.ts is a stub. Default: wiring.ts's own. */
-  wiringFunctions?: Pick<WiringServiceDeps, 'deriveWiring' | 'applyWiringOverrides'>;
 }
 
 /** What createApp builds. */
@@ -78,15 +76,14 @@ function graphqlRequestOf(body: unknown): GraphQLRequest | null {
  * @param deps - The database, the MCP key, and any services a test replaces.
  * @returns The app, the services it was built with, and the unified gateway.
  */
-export function createApp({ db, mcpKey, checkDatabase, dist, wiringFunctions, ...deps }: AppDeps): BuiltApp {
+export function createApp({ db, mcpKey, checkDatabase, dist, ...deps }: AppDeps): BuiltApp {
   const fetchDeps = deps.fetch ? { fetch: deps.fetch } : {};
   // Upstream changes are followed in subscription order: wiring moves overrides first, then the gateway recomposes.
   const upstreamEvents = createEventFeed<UpstreamEvent>('[upstreams]');
   const changes = createEventFeed<SourcesChange>('[gateway]');
   const upstreams = deps.upstreams ?? createUpstreamService({ db, events: upstreamEvents, ...fetchDeps });
   const concepts = deps.concepts ?? createConceptService({ db, upstreams, changes });
-  const wiring =
-    deps.wiring ?? createWiringService({ db, concepts, upstreams, changes, upstreamEvents, ...wiringFunctions });
+  const wiring = deps.wiring ?? createWiringService({ db, concepts, upstreams, changes, upstreamEvents });
   const unified = createUnifiedService({ upstreams, concepts, wiring, changes, upstreamEvents, ...fetchDeps });
   const services: Services = {
     upstreams,

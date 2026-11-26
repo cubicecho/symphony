@@ -1,5 +1,4 @@
-// The wiring service on PGlite. wiring.ts is still a stub, so the derivation runs FAKE_WIRING_FUNCTIONS; once it is
-// implemented, drop `...FAKE_WIRING_FUNCTIONS` below and tighten the effective-wiring assertions to the real output.
+// The wiring service on PGlite: wiring generated from the stored concepts, with stored overrides applied.
 import { ErrorCode } from '../../server/core/errors.ts';
 import { createEventFeed } from '../../server/core/events.ts';
 import type {
@@ -15,13 +14,7 @@ import { CONCEPT_SOURCE_NAME } from '../../server/gateway/wiring.ts';
 import { createWiringService } from '../../server/gateway/wiring-service.ts';
 import { createUpstreamService } from '../../server/upstreams/upstream-service.ts';
 import { openTestDatabase } from '../db.ts';
-import {
-  createMemoUpstream,
-  FAKE_WIRING_FUNCTIONS,
-  MEMO_UPSTREAM,
-  MEMO_URL,
-  noteConcept,
-} from '../fixtures/memo-upstream.ts';
+import { createMemoUpstream, MEMO_UPSTREAM, MEMO_URL, noteConcept } from '../fixtures/memo-upstream.ts';
 
 const OVERRIDE = { renames: { types: { Memo: 'Note' }, fields: { 'Query.memo': 'noteMemo' } } };
 
@@ -40,35 +33,33 @@ beforeAll(async () => {
   });
   upstreams = createUpstreamService({ db: opened.db, fetch: createMemoUpstream().fetch, events: upstreamEvents });
   concepts = createConceptService({ db: opened.db, upstreams });
-  wiring = createWiringService({
-    db: opened.db,
-    concepts,
-    upstreams,
-    changes: feed,
-    upstreamEvents,
-    ...FAKE_WIRING_FUNCTIONS,
-  });
+  wiring = createWiringService({ db: opened.db, concepts, upstreams, changes: feed, upstreamEvents });
   await upstreams.add({ name: MEMO_UPSTREAM, url: MEMO_URL, headers: [] });
 });
 afterAll(() => opened.close());
 
 describe('wiring', () => {
-  it('has no wiring, and runs no wiring function, while nothing generates or overrides any', async () => {
-    const stubbed = createWiringService({ db: opened.db, concepts, upstreams });
-    expect(await stubbed.effective()).toEqual({ wiring: [], problems: [] });
+  it('has no wiring while nothing generates or overrides any', async () => {
+    const fresh = createWiringService({ db: opened.db, concepts, upstreams });
+    expect(await fresh.effective()).toEqual({ wiring: [], problems: [] });
   });
 
   it("derives wiring for a servable concept's members", async () => {
     await concepts.save(noteConcept());
     const { wiring: effective } = await wiring.effective();
-    expect(effective.map((one) => one.upstream)).toEqual([MEMO_UPSTREAM]);
-    expect(await wiring.find(MEMO_UPSTREAM)).toMatchObject({ override: null });
+    expect(effective.map((one) => one.upstream)).toEqual([MEMO_UPSTREAM, CONCEPT_SOURCE_NAME]);
+    expect(await wiring.find(MEMO_UPSTREAM)).toMatchObject({
+      renames: { types: { Memo: 'Note' }, fields: { 'Query.memo': 'fieldNotesNote' } },
+      mergeKeys: [{ type: 'Note', keyField: 'id', lookupField: 'fieldNotesNote' }],
+      override: null,
+    });
   });
 
   it('stores an override, named for its source, and recomposes', async () => {
     const effective = await wiring.setOverride(MEMO_UPSTREAM, OVERRIDE);
     expect(effective.override).toEqual({ ...OVERRIDE, upstream: MEMO_UPSTREAM });
-    expect(effective.renames.types).toEqual({ Memo: 'Note' });
+    expect(effective.renames).toEqual({ types: { Memo: 'Note' }, fields: { 'Query.memo': 'noteMemo' } });
+    expect(effective.origins).toMatchObject({ 'type:Memo': 'override', 'field:Query.memo': 'override' });
     expect(changes.at(-1)?.reason).toBe(`wiring override for ${MEMO_UPSTREAM} set`);
   });
 
