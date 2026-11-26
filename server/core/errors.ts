@@ -16,12 +16,12 @@ export type ErrorCode = (typeof ErrorCode)[keyof typeof ErrorCode];
  * Makes an error factory for one code.
  *
  * @param code - The `extensions.code` value.
- * @returns A function from message to GraphQLError.
+ * @returns A function from message, and any details a client reads beside the code, to GraphQLError.
  */
 const withCode =
   (code: ErrorCode) =>
-  (message: string): GraphQLError =>
-    new GraphQLError(message, { extensions: { code } });
+  (message: string, details: Readonly<Record<string, unknown>> = {}): GraphQLError =>
+    new GraphQLError(message, { extensions: { ...details, code } });
 
 /** Arguments the caller can fix. */
 export const badInput = withCode(ErrorCode.BadUserInput);

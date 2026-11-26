@@ -2,13 +2,15 @@
 // compile that fails on a marker so errors can be followed through.
 import { buildSchema } from 'graphql';
 import { createComponentCatalog } from '../../server/catalog/catalog.ts';
-import { notFound } from '../../server/core/errors.ts';
+import { badInput, notFound } from '../../server/core/errors.ts';
 import {
   type ComponentCatalog,
+  type ConceptRecord,
   type ModuleRecord,
   ModuleStatus,
   type PageService,
   type Services,
+  UnifiedState,
   type Upstream,
 } from '../../server/core/services.ts';
 import { type CompileResult, CompileStage } from '../../server/modules/compile-result.ts';
@@ -90,6 +92,7 @@ export function createFakeServices(catalog: ComponentCatalog = createComponentCa
     moveItem: unused,
     removeItem: unused,
   };
+  const concepts = new Map<string, ConceptRecord>();
   const services: Services = {
     upstreams: {
       list: async () => upstreams,
@@ -137,6 +140,46 @@ export function createFakeServices(catalog: ComponentCatalog = createComponentCa
     },
     pages,
     catalog,
+    concepts: {
+      list: async () => [...concepts.values()],
+      find: async (idOrName) =>
+        [...concepts.values()].find((concept) => concept.id === idOrName || concept.name === idOrName) ?? null,
+      save: async (definition) => {
+        const name =
+          typeof definition === 'object' && definition !== null && 'name' in definition ? definition.name : '';
+        if (typeof name !== 'string' || name === '') {
+          const problems = [
+            { concept: '', member: null, operation: null, message: 'name: Required', line: null, column: null },
+          ];
+          throw badInput('The concepts cannot be served.\n- name: Required', { problems });
+        }
+        const now = new Date();
+        const record: ConceptRecord = {
+          id: concepts.get(name)?.id ?? `c${concepts.size + 1}`,
+          name,
+          definition,
+          concept: null,
+          problems: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+        concepts.set(name, record);
+        return record;
+      },
+      remove: async (idOrName) => {
+        const found = [...concepts.values()].find((concept) => concept.id === idOrName || concept.name === idOrName);
+        return found === undefined ? false : concepts.delete(found.name);
+      },
+    },
+    wiring: {
+      effective: async () => ({ wiring: [], problems: [] }),
+      find: async () => null,
+      setOverride: unused,
+      clearOverride: async () => false,
+    },
+    unified: {
+      status: () => ({ state: UnifiedState.Starting, composedAt: null, sources: [], problems: [], lastError: null }),
+    },
   };
   return { services, calls };
 }

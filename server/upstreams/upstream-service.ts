@@ -15,16 +15,20 @@ import {
 import { UUID_PATTERN } from '../core/consts.ts';
 import { UPSTREAM_DEFAULTS, type UpstreamSettings } from '../core/defaults.ts';
 import { badInput, conflict, ErrorCode, errorMessage, notFound, upstreamFailed } from '../core/errors.ts';
-import type {
-  CachedSchema,
-  GraphQLRequest,
-  GraphQLResponseBody,
-  Upstream,
-  UpstreamInput,
-  UpstreamService,
+import type { EventFeed } from '../core/events.ts';
+import {
+  type CachedSchema,
+  type GraphQLRequest,
+  type GraphQLResponseBody,
+  type Upstream,
+  UpstreamChange,
+  type UpstreamEvent,
+  type UpstreamInput,
+  type UpstreamService,
 } from '../core/services.ts';
 import type { Database } from '../db/client.ts';
 import { upstreamSchemas, upstreams } from '../db/schema.ts';
+import { CONCEPT_SOURCE_NAME } from '../gateway/wiring.ts';
 import { createSecretResolver } from './secrets.ts';
 
 /** A header name as HTTP allows it. */
@@ -45,6 +49,8 @@ export interface UpstreamServiceDeps {
   fetch?: typeof fetch;
   /** Where `${env:…}` references are read. Default: `process.env`. */
   env?: Readonly<Record<string, string | undefined>>;
+  /** Told after every add, update, remove and successful refresh, once the write is done. */
+  events?: EventFeed<UpstreamEvent>;
 }
 
 /** One row of `upstreams` joined with its schema row. */
@@ -64,6 +70,11 @@ function cleanInput(input: UpstreamInput): UpstreamInput {
   if (isNameValid === false) {
     throw badInput(
       `An upstream's name is 1–${MAX_NAME_CHARS} letters, digits, spaces, dots, dashes or underscores, starting with a letter or digit.`,
+    );
+  }
+  if (name === CONCEPT_SOURCE_NAME) {
+    throw badInput(
+      `"${CONCEPT_SOURCE_NAME}" is the unified gateway's name for the concept subgraph; pick another name.`,
     );
   }
   let url: URL;
@@ -154,6 +165,17 @@ export function createUpstreamService(
   const { db } = deps;
   const send = deps.fetch ?? globalThis.fetch;
   const env = deps.env ?? process.env;
+  /**
+   * Tells the listeners about a change to one upstream.
+   *
+   * @param change - What happened.
+   * @param upstream - The upstream as it is now.
+   * @param [previousName] - Its name before the change, when an update renamed it.
+   */
+  const announce = async (change: UpstreamChange, upstream: Upstream, previousName = upstream.name) => {
+    await deps.events?.emit({ change, id: upstream.id, name: upstream.name, previousName });
+    return upstream;
+  };
   /** Schemas rebuilt from stored introspection, by upstream id and hash, so a request doesn't rebuild one. */
   const built = new Map<string, CachedSchema>();
 
@@ -298,26 +320,30 @@ export function createUpstreamService(
       if (row === undefined) {
         throw new Error('The upstream insert returned no row.');
       }
+      let added: Upstream;
       try {
-        return await refreshRow(row);
+        added = await refreshRow(row);
       } catch (error) {
         console.warn(`[upstreams] ${row.name}: first introspection failed: ${errorMessage(error)}`);
-        return toUpstream(row);
+        added = await toUpstream(row);
       }
+      return announce(UpstreamChange.Added, added);
     },
 
     update: async (id, input) => {
       const existing = await requireRow(id);
       const clean = cleanInput(input);
+      let updated: Upstream;
       try {
         const [row] = await db.update(upstreams).set(clean).where(eq(upstreams.id, existing.id)).returning();
-        return toUpstream(row ?? existing);
+        updated = await toUpstream(row ?? existing);
       } catch (error) {
         if (isUniqueViolation(error)) {
           throw conflict(`An upstream named "${clean.name}" already exists.`);
         }
         throw error;
       }
+      return announce(UpstreamChange.Updated, updated, existing.name);
     },
 
     remove: async (id) => {
@@ -327,10 +353,11 @@ export function createUpstreamService(
       }
       await db.delete(upstreams).where(eq(upstreams.id, row.id));
       built.delete(row.id);
+      await deps.events?.emit({ change: UpstreamChange.Removed, id: row.id, name: row.name, previousName: row.name });
       return true;
     },
 
-    refresh: async (id) => refreshRow(await requireRow(id)),
+    refresh: async (id) => announce(UpstreamChange.Refreshed, await refreshRow(await requireRow(id))),
 
     execute: async (id, request) => {
       const row = await requireRow(id);
