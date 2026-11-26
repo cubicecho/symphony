@@ -1,16 +1,22 @@
 // The admin API's resolvers over the shared services. Agents reach the same services through /mcp.
-import type { GraphQLSchema } from 'graphql';
+import { GraphQLScalarType, type GraphQLSchema, valueFromASTUntyped } from 'graphql';
 import { createSchema } from 'graphql-yoga';
 import { LAYOUT_DEFAULTS, MODULE_DEFAULTS } from '../core/defaults.ts';
 import { notFound } from '../core/errors.ts';
 import {
+  type ConceptRecord,
   type ModuleRecord,
   ModuleStatus,
   type Page,
   type PageItem,
   type Services,
+  UnifiedProblemKind,
+  UnifiedState,
+  type UnifiedStatus,
   type Upstream,
 } from '../core/services.ts';
+import { UNIFIED_ENDPOINT } from '../gateway/unified-service.ts';
+import type { EffectiveWiring, SourceWiring } from '../gateway/wiring.ts';
 import { TYPE_DEFS } from './type-defs.ts';
 
 /** What every resolver reads. */
@@ -36,6 +42,34 @@ export function codeUrlOf(module: ModuleRecord): string | null {
 export function proxyPathOf(upstreamId: string): string {
   return `/proxy/${upstreamId}`;
 }
+
+/** Any JSON value, passed through as it is: concept definitions and wiring overrides. */
+const JsonScalar = new GraphQLScalarType({
+  name: 'JSON',
+  description: 'Any JSON value.',
+  serialize: (value) => value,
+  parseValue: (value) => value,
+  parseLiteral: (node, variables) => valueFromASTUntyped(node, variables),
+});
+
+/**
+ * Lists a rename map's entries, as the API shows them.
+ *
+ * @param renames - Source name to unified name.
+ * @returns One `{ from, to }` per rename.
+ */
+function renameList(renames: Readonly<Record<string, string>>): { from: string; to: string }[] {
+  return Object.entries(renames).map(([from, to]) => ({ from, to }));
+}
+
+/** The resolvers Wiring and SourceWiring share, since an effective wiring is a wiring too. */
+const WIRING_FIELDS = {
+  source: (wiring: SourceWiring) => wiring.upstream,
+  renames: (wiring: SourceWiring) => ({
+    types: renameList(wiring.renames.types),
+    fields: renameList(wiring.renames.fields),
+  }),
+};
 
 /**
  * Finds a module a page item or a query names.
@@ -75,6 +109,10 @@ export function buildSchema(): GraphQLSchema {
           newItemColumns: LAYOUT_DEFAULTS.newItemColumns,
           maxSourceChars: MODULE_DEFAULTS.maxSourceChars,
         }),
+        concepts: (_: unknown, _args: unknown, ctx: Context) => ctx.concepts.list(),
+        concept: (_: unknown, args: { idOrName: string }, ctx: Context) => ctx.concepts.find(args.idOrName),
+        sourceWiring: async (_: unknown, _args: unknown, ctx: Context) => (await ctx.wiring.effective()).wiring,
+        unifiedStatus: (_: unknown, _args: unknown, ctx: Context) => ctx.unified.status(),
       },
       Mutation: {
         addUpstream: (_: unknown, args: { input: Parameters<Context['upstreams']['add']>[0] }, ctx: Context) =>
@@ -136,6 +174,38 @@ export function buildSchema(): GraphQLSchema {
         moveItem: (_: unknown, args: { id: string; offset: number }, ctx: Context) =>
           ctx.pages.moveItem(args.id, args.offset),
         removeItem: (_: unknown, args: { id: string }, ctx: Context) => ctx.pages.removeItem(args.id),
+        saveConcept: (_: unknown, args: { definition: unknown }, ctx: Context) => ctx.concepts.save(args.definition),
+        removeConcept: (_: unknown, args: { id: string }, ctx: Context) => ctx.concepts.remove(args.id),
+        setWiringOverride: (_: unknown, args: { source: string; override: unknown }, ctx: Context) =>
+          ctx.wiring.setOverride(args.source, args.override),
+        clearWiringOverride: (_: unknown, args: { source: string }, ctx: Context) =>
+          ctx.wiring.clearOverride(args.source),
+      },
+      JSON: JsonScalar,
+      Concept: {
+        servable: (concept: ConceptRecord) => concept.problems.length === 0,
+        createdAt: (concept: ConceptRecord) => concept.createdAt.toISOString(),
+        updatedAt: (concept: ConceptRecord) => concept.updatedAt.toISOString(),
+      },
+      Wiring: WIRING_FIELDS,
+      SourceWiring: {
+        ...WIRING_FIELDS,
+        origins: (wiring: EffectiveWiring) =>
+          Object.entries(wiring.origins).map(([entry, origin]) => ({ entry, origin })),
+      },
+      WiringOrigin: { GENERATED: 'generated', OVERRIDE: 'override' },
+      UnifiedState: { STARTING: UnifiedState.Starting, READY: UnifiedState.Ready, FAILED: UnifiedState.Failed },
+      UnifiedProblemKind: {
+        CONCEPT: UnifiedProblemKind.Concept,
+        WIRING: UnifiedProblemKind.Wiring,
+        SOURCE: UnifiedProblemKind.Source,
+      },
+      UnifiedStatus: {
+        endpoint: () => UNIFIED_ENDPOINT,
+        composedAt: (status: UnifiedStatus) => status.composedAt?.toISOString() ?? null,
+      },
+      UnifiedError: {
+        at: (error: { at: Date }) => error.at.toISOString(),
       },
       Upstream: {
         proxyPath: (upstream: Upstream) => proxyPathOf(upstream.id),

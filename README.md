@@ -44,7 +44,7 @@ You then place the module on a page.
 
 ## Trust model (Phase 1)
 
-- **Single operator, self-hosted.** The web UI and admin API at `/graphql` have no sign-in. Only `/mcp` takes a key. Run Symphony on a network you trust.
+- **Single operator, self-hosted.** The web UI, the admin API at `/graphql` and the unified API at `/unified/graphql` have no sign-in. Only `/mcp` takes a key. Run Symphony on a network you trust.
 - **Modules run in the page itself.** There is no iframe sandbox. The compiler only allows the imports listed in the contract, but module code can do anything page script can.
 - **Header secrets.** Header values may say `${env:SYMPHONY_…}`. The reference is stored, and the value is filled in only when a request goes out.
 
@@ -55,6 +55,8 @@ server/   Express + graphql-yoga + drizzle (PGlite in DATA_DIR, or Postgres via 
   upstreams/  introspection, schema cache, proxy, header secrets
   modules/    compile pipeline (babel parse → import allowlist → gql validation → esbuild) and storage
   pages/      pages and placed items
+  concepts/   concepts as data: validation, the generated concept subgraph and its engine
+  gateway/    the unified API: concept and wiring storage, composition, the hot-swapped gateway at /unified/graphql
   mcp/        the agents' door (MCP SDK, stateless Streamable HTTP)
   catalog/    cubeui component catalogue and docs (synced by `npm run catalog:sync`)
 web/      Vite + React + TanStack Router/Query + cubeui; web/src/modules is the module runtime and loader

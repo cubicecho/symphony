@@ -117,6 +117,14 @@ describe('/mcp', () => {
         'submit_module',
         'list_modules',
         'get_module',
+        'list_concepts',
+        'get_concept',
+        'save_concept',
+        'remove_concept',
+        'get_wiring',
+        'set_wiring_override',
+        'clear_wiring_override',
+        'get_unified_status',
       ]),
     );
   });
@@ -258,6 +266,34 @@ describe('/mcp', () => {
     expect(listed).toEqual([{ id: 'm1', name: 'Orders', upstream: FAKE_UPSTREAM, status: 'READY', version: 2 }]);
     const module = textOf(await client.callTool({ name: 'get_module', arguments: { id: 'm1' } }));
     expect(module).toContain('export default function A() {}');
+  });
+
+  it('saves, gets and removes a concept, and refuses one with problems', async () => {
+    const refused = await client.callTool({ name: 'save_concept', arguments: { definition: { fields: [] } } });
+    expect(refused.isError).toBe(true);
+    const saved = await client.callTool({ name: 'save_concept', arguments: { definition: { name: 'Note' } } });
+    expect(JSON.parse(textOf(saved)).saved).toMatchObject({ name: 'Note', servable: true });
+    const listed = JSON.parse(textOf(await client.callTool({ name: 'list_concepts', arguments: {} })));
+    expect(listed).toEqual([expect.objectContaining({ name: 'Note', problemCount: 0 })]);
+    const got = JSON.parse(textOf(await client.callTool({ name: 'get_concept', arguments: { concept: 'Note' } })));
+    expect(got.definition).toEqual({ name: 'Note' });
+    const missing = await client.callTool({ name: 'get_concept', arguments: { concept: 'Nte' } });
+    expect(textOf(missing)).toContain('Note');
+    const removed = await client.callTool({ name: 'remove_concept', arguments: { concept: 'Note' } });
+    expect(JSON.parse(textOf(removed))).toEqual({ removed: 'Note' });
+  });
+
+  it('reads the wiring and the unified status', async () => {
+    const wiring = JSON.parse(textOf(await client.callTool({ name: 'get_wiring', arguments: {} })));
+    expect(wiring).toEqual({ wiring: [], problems: [] });
+    const none = await client.callTool({ name: 'get_wiring', arguments: { source: FAKE_UPSTREAM } });
+    expect(none.isError).toBe(true);
+    const cleared = JSON.parse(
+      textOf(await client.callTool({ name: 'clear_wiring_override', arguments: { source: FAKE_UPSTREAM } })),
+    );
+    expect(cleared).toEqual({ source: FAKE_UPSTREAM, cleared: false });
+    const status = JSON.parse(textOf(await client.callTool({ name: 'get_unified_status', arguments: {} })));
+    expect(status).toMatchObject({ endpoint: '/unified/graphql', state: 'starting', lastError: null });
   });
 
   it('turns a thrown NOT_FOUND into an error result', async () => {

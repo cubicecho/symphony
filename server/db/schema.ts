@@ -1,7 +1,8 @@
 // Symphony's tables: the upstream APIs it wraps and their cached schemas, the modules written against
-// them, and the pages modules are placed on.
+// them, the pages modules are placed on, and the concepts and wiring the unified gateway is composed from.
 import { sql } from 'drizzle-orm';
 import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import type { WiringOverride } from '../gateway/wiring.ts';
 
 /** One header sent with every request to an upstream. The value may hold `${env:NAME}` references. */
 export interface StoredHeader {
@@ -70,6 +71,34 @@ export const modules = pgTable(
     check('ck_modules_status', sql`${table.status} in ('READY', 'FAILED')`),
   ],
 );
+
+/**
+ * A concept: one entity read and written across its member upstreams. The definition is kept as submitted,
+ * so a concept an upstream's schema change has broken stays visible with its problems.
+ */
+export const concepts = pgTable('concepts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull().unique(),
+  definition: jsonb('definition').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+/**
+ * A user's edit to one source's wiring, keyed by the source's name: an upstream's, or the concept subgraph's.
+ * It follows its upstream through a rename and goes when the upstream is removed (gateway/wiring-service.ts).
+ */
+export const wiringOverrides = pgTable('wiring_overrides', {
+  source: text('source').primaryKey(),
+  override: jsonb('override').$type<WiringOverride>().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
 
 /** A page of modules. */
 export const pages = pgTable('pages', {
