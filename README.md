@@ -35,6 +35,7 @@ Then ask for a module, for example "a module showing recent orders as a table".
 **The agent's tools:** `list_upstreams`, `get_schema`, `search_schema`, `run_query`, `list_components`, `get_component_docs`, `get_module_contract`, `check_module`, `submit_module`, `list_modules`, `get_module`.
 
 **What it does with them:**
+
 1. Reads the schema and the cubeui component docs.
 2. Tries its queries with `run_query`.
 3. Submits the module, fixing it until it compiles.
