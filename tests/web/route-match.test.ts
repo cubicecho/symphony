@@ -69,6 +69,13 @@ describe('module URLs', () => {
     expect(moduleSearchOf({ 'm.a': '/x', 'm.b': 4, page: 2, q: 'text' })).toEqual({ 'm.a': '/x', page: 2, q: 'text' });
   });
 
+  it('makes an item path without its leading slash a module path', () => {
+    expect(itemPathOf({ 'm.x': 'orders/o3' }, 'x')).toBe('/orders/o3');
+    expect(moduleSearchOf({ 'm.x': 'orders/o3', q: 'orders' })).toEqual({ 'm.x': '/orders/o3', q: 'orders' });
+    expect(splatOf(itemPathOf({ 'm.x': 'orders/o3' }, 'x'))).toBe('orders/o3');
+    expect(splatOf('orders/o3')).toBe('orders/o3');
+  });
+
   it('turns a module path into the full-page splat and back', () => {
     expect(splatOf('/orders/o3')).toBe('orders/o3');
     expect(splatOf('/')).toBe('');

@@ -1,5 +1,6 @@
 // Where a placed module's path lives in the app's URLs: in its page's search params, one key per item
-// (`/pages/home?m.4f2a=/orders/o3`), and in the full-page view's path (`/pages/home/items/4f2a/orders/o3`).
+// (`/pages/home?m.4f2a=/orders/o3`), and in the full-page view's path (`/pages/home/items/4f2a/orders/o3`). The
+// full-page view carries the page's other search params along, so the page's other modules keep their paths.
 import { ROOT_PATH } from './route-match.ts';
 
 /** What starts the search key that holds one item's path. */
@@ -25,17 +26,33 @@ export function itemSearchKey(itemId: string): ItemSearchKey {
 }
 
 /**
+ * Makes a path from a URL a module path, which always starts at the root.
+ *
+ * @param path - `/orders/o3`, or `orders/o3` as a hand-edited URL may have it.
+ * @returns `/orders/o3`.
+ */
+export function normalisedPath(path: string): string {
+  return path.startsWith(ROOT_PATH) ? path : `${ROOT_PATH}${path}`;
+}
+
+/**
  * Reads a page's search params for its route's `validateSearch`.
  *
  * @param search - The parsed search params.
- * @returns The same params, less any `m.*` key whose value is not a string: other params are left as they are.
+ * @returns The same params, less any `m.*` key whose value is not a string, and each item path made to start with
+ * `/`. Other params are left as they are.
  */
 export function moduleSearchOf(search: Record<string, unknown>): ModuleSearch {
-  return Object.fromEntries(
-    Object.entries(search).filter(
-      ([key, value]) => key.startsWith(ITEM_SEARCH_PREFIX) === false || typeof value === 'string',
-    ),
-  );
+  const kept: [string, unknown][] = [];
+  for (const [key, value] of Object.entries(search)) {
+    const isItemPath = key.startsWith(ITEM_SEARCH_PREFIX);
+    if (isItemPath === false) {
+      kept.push([key, value]);
+    } else if (typeof value === 'string') {
+      kept.push([key, normalisedPath(value)]);
+    }
+  }
+  return Object.fromEntries(kept);
 }
 
 /**
@@ -43,11 +60,11 @@ export function moduleSearchOf(search: Record<string, unknown>): ModuleSearch {
  *
  * @param search - The search params, as any route has them.
  * @param itemId - The page item.
- * @returns Its path, or the root when the URL holds none.
+ * @returns Its path, starting with `/`, or the root when the URL holds none.
  */
 export function itemPathOf(search: Record<string, unknown>, itemId: string): string {
   const path = search[itemSearchKey(itemId)];
-  return typeof path === 'string' ? path : ROOT_PATH;
+  return typeof path === 'string' ? normalisedPath(path) : ROOT_PATH;
 }
 
 /**
@@ -71,7 +88,7 @@ export function withItemPath(search: Record<string, unknown>, itemId: string, pa
  * @returns `orders/o3`: the URL's last segments, after the item id.
  */
 export function splatOf(path: string): string {
-  return path.slice(ROOT_PATH.length);
+  return path.startsWith(ROOT_PATH) ? path.slice(ROOT_PATH.length) : path;
 }
 
 /**
@@ -81,5 +98,5 @@ export function splatOf(path: string): string {
  * @returns `/orders/o3`.
  */
 export function pathOfSplat(splat: string | undefined): string {
-  return `${ROOT_PATH}${splat ?? ''}`;
+  return normalisedPath(splat ?? '');
 }
