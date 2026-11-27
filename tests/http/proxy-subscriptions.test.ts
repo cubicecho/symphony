@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import type { OpenedDatabase } from '../../server/db/client.ts';
 import { createApp } from '../../server/http/app.ts';
 import type { StreamProxy } from '../../server/http/stream-proxy.ts';
+import { RequestError, StreamDroppedError, streamGraphQL } from '../../web/src/core/gql.ts';
 import { openTestDatabase } from '../db.ts';
 import { createRunFixture, RUN_FIXTURE_URL, type RunFixture } from '../fixtures/run-upstream.ts';
 
@@ -174,6 +175,45 @@ describe('subscriptions through the proxy', () => {
     await readEvents(response, (read) => read.length === 3).then(() => undefined);
     expect(runs.openStreams()).toBe(1);
     streams.closeAll();
+    await runs.allClosed();
+  });
+});
+
+describe("the runtime's stream client", () => {
+  /**
+   * Streams one subscription with the browser's client.
+   *
+   * @param variables - The subscription's variables.
+   * @param [query] - The document.
+   * @returns Whether it opened, and the results it handed over.
+   */
+  async function stream(variables: Record<string, unknown>, query = RUN_EVENTS) {
+    const results: unknown[] = [];
+    let isOpen = false;
+    const handlers = {
+      onOpen: () => {
+        isOpen = true;
+      },
+      onNext: (result: unknown) => {
+        results.push(result);
+      },
+    };
+    await streamGraphQL(`${base}/proxy/${upstreamId}`, { query, variables }, handlers, new AbortController().signal);
+    return { isOpen, results };
+  }
+
+  it('hands over each result and resolves on complete', async () => {
+    const { isOpen, results } = await stream({ runId: 'c1' });
+    expect(isOpen).toBe(true);
+    expect(results).toHaveLength(3);
+    expect(results[2]).toEqual({ data: { runEvents: { seq: 3, text: 'c1 step 3' } } });
+  });
+
+  it('throws a RequestError for a refusal, and a StreamDroppedError for a stream that ends early', async () => {
+    const invalid = 'subscription { runEvents(runId: "c2") { nope } }';
+    await expect(stream({}, invalid)).rejects.toBeInstanceOf(RequestError);
+    // The idle timeout ends a stream that stays open, without `complete`.
+    await expect(stream({ runId: 'c3', isRunning: true })).rejects.toBeInstanceOf(StreamDroppedError);
     await runs.allClosed();
   });
 });

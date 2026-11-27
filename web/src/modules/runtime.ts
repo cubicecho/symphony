@@ -5,12 +5,51 @@ import {
   useMutation as useTanstackMutation,
   useQuery as useTanstackQuery,
 } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
 import { MS_PER_SECOND } from '@/core/consts';
-import { postGraphQL } from '@/core/gql';
+import { postGraphQL, RequestError, streamGraphQL } from '@/core/gql';
 import { type ModuleScope, moduleQueryPrefix, useModuleScope } from './module-context.ts';
 
 /** The first operation name in a document: `query RecentOrders(…)` gives `RecentOrders`. */
 const OPERATION_NAME = /\b(?:query|mutation|subscription)\s+([_A-Za-z][_0-9A-Za-z]*)/;
+/** How many events `useSubscription` keeps when `maxEvents` is left out. */
+const DEFAULT_MAX_EVENTS = 100;
+/** The wait before reconnecting a dropped subscription the first time, in milliseconds. */
+const FIRST_RECONNECT_DELAY_MS = 1000;
+/** The longest wait between two reconnects, in milliseconds. */
+const MAX_RECONNECT_DELAY_MS = 30_000;
+/** How much the wait grows after each drop in a row. */
+const RECONNECT_BACKOFF_FACTOR = 2;
+
+/**
+ * Where a subscription is. `idle` while `enabled` is false; `connecting` while it opens, and again while it waits to
+ * reconnect after a drop; `open` while it streams; `complete` once the upstream ended it; `error` when it was refused
+ * and won't be tried again.
+ */
+export type SubscriptionStatus = 'idle' | 'connecting' | 'open' | 'complete' | 'error';
+
+/** What `useSubscription` takes besides the document. */
+export interface SubscriptionOptions<T> {
+  /** The document's variables. A change closes the stream and opens a new one. */
+  variables?: Record<string, unknown> | undefined;
+  /** False holds the subscription back, or closes it, until it is true. */
+  enabled?: boolean | undefined;
+  /** How many of the latest events `events` keeps. Default 100. */
+  maxEvents?: number | undefined;
+  /** Called with each event's `data` as it arrives: to refetch a query when a run ends, say. */
+  onEvent?: ((data: T) => void) | undefined;
+}
+
+/** What `useSubscription` hands back. */
+export interface SubscriptionResult<T> {
+  /** The `data` of each event so far, oldest first, at most `maxEvents` of them. */
+  events: T[];
+  /** The newest event's `data`. */
+  latest: T | undefined;
+  status: SubscriptionStatus;
+  /** Why it was refused, why it last dropped, or the GraphQL errors the last event carried. */
+  error: Error | null;
+}
 
 /** What `useQuery` takes besides the document. */
 export interface QueryOptions {
@@ -110,6 +149,17 @@ function route(document: Document, scope: ModuleScope): Routed {
 }
 
 /**
+ * Explains a document whose upstream the module doesn't list.
+ *
+ * @param upstream - The upstream's name, or null for the default.
+ * @returns The error.
+ */
+function missingUpstreamError(upstream: string | null): Error {
+  const which = upstream === null ? 'a default upstream' : `an upstream named "${upstream}"`;
+  return new Error(`This module has no ${which}. Add it to the module's upstreams.`);
+}
+
+/**
  * Sends a routed document through Symphony's proxy.
  *
  * @typeParam T - What the document's `data` holds.
@@ -120,8 +170,7 @@ function route(document: Document, scope: ModuleScope): Routed {
  */
 function send<T>(routed: Routed, variables: Record<string, unknown> | undefined): Promise<T> {
   if (routed.proxyPath === undefined) {
-    const which = routed.upstream === null ? 'a default upstream' : `an upstream named "${routed.upstream}"`;
-    return Promise.reject(new Error(`This module has no ${which}. Add it to the module's upstreams.`));
+    return Promise.reject(missingUpstreamError(routed.upstream));
   }
   return postGraphQL<T>(routed.proxyPath, {
     query: routed.query,
@@ -192,4 +241,111 @@ export function useMutation<T, V extends Record<string, unknown> = Record<string
     error: mutation.error,
     isPending: mutation.isPending,
   };
+}
+
+/**
+ * A subscription's state before its first event.
+ *
+ * @param status - Where it is.
+ * @param [error] - Why, when it was refused.
+ * @returns The state.
+ */
+function freshSubscription<T>(status: SubscriptionStatus, error: Error | null = null): SubscriptionResult<T> {
+  return { events: [], latest: undefined, status, error };
+}
+
+/**
+ * Follows a subscription on the document's upstream, through Symphony's proxy. It opens on mount, closes on unmount
+ * or when the variables change, and completes when the upstream completes. A dropped stream reconnects with backoff;
+ * one the server refused, or that completed, does not.
+ *
+ * @typeParam T - What each event's `data` holds.
+ * @param document - A `gql` or `gql.from` subscription document.
+ * @param [options] - Variables, whether it may run yet, how many events to keep, and a callback per event.
+ * @returns The events so far, the latest, the status and the last error.
+ */
+export function useSubscription<T>(document: Document, options: SubscriptionOptions<T> = {}): SubscriptionResult<T> {
+  const scope = useModuleScope();
+  const { query, upstream, proxyPath } = route(document, scope);
+  const { variables, enabled = true, maxEvents = DEFAULT_MAX_EVENTS, onEvent } = options;
+  // Variables arrive as a fresh object each render, so the stream follows their JSON, not their identity.
+  const variablesKey = JSON.stringify(variables ?? null);
+  const [state, setState] = useState<SubscriptionResult<T>>(() => freshSubscription(enabled ? 'connecting' : 'idle'));
+  // The newest callback, read when an event arrives, so passing a new function doesn't reopen the stream.
+  const onEventRef = useRef(onEvent);
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  });
+
+  useEffect(() => {
+    if (enabled === false) {
+      setState(freshSubscription('idle'));
+      return;
+    }
+    if (proxyPath === undefined) {
+      setState(freshSubscription('error', missingUpstreamError(upstream)));
+      return;
+    }
+    const closer = new AbortController();
+    const operation = {
+      query,
+      variables: JSON.parse(variablesKey) ?? undefined,
+      operationName: operationNameOf(query),
+    };
+    let reconnectDelayMs = FIRST_RECONNECT_DELAY_MS;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    setState(freshSubscription('connecting'));
+
+    const connect = async (): Promise<void> => {
+      try {
+        await streamGraphQL<T>(
+          proxyPath,
+          operation,
+          {
+            onOpen: () => {
+              reconnectDelayMs = FIRST_RECONNECT_DELAY_MS;
+              setState((current) => ({ ...current, status: 'open', error: null }));
+            },
+            onNext: (result) => {
+              const errors = result.errors ?? [];
+              const error = errors.length > 0 ? new RequestError(errors) : null;
+              const data = result.data;
+              if (data === undefined || data === null) {
+                setState((current) => ({ ...current, error }));
+                return;
+              }
+              setState((current) => ({
+                events: [...current.events, data].slice(-maxEvents),
+                latest: data,
+                status: 'open',
+                error,
+              }));
+              onEventRef.current?.(data);
+            },
+          },
+          closer.signal,
+        );
+        setState((current) => ({ ...current, status: 'complete' }));
+      } catch (error) {
+        if (closer.signal.aborted) {
+          return;
+        }
+        const reason = error instanceof Error ? error : new Error(String(error));
+        if (reason instanceof RequestError) {
+          setState((current) => ({ ...current, status: 'error', error: reason }));
+          return;
+        }
+        setState((current) => ({ ...current, status: 'connecting', error: reason }));
+        reconnectTimer = setTimeout(() => void connect(), reconnectDelayMs);
+        reconnectDelayMs = Math.min(reconnectDelayMs * RECONNECT_BACKOFF_FACTOR, MAX_RECONNECT_DELAY_MS);
+      }
+    };
+    void connect();
+    return () => {
+      closer.abort();
+      clearTimeout(reconnectTimer);
+    };
+  }, [enabled, proxyPath, upstream, query, variablesKey, maxEvents]);
+
+  return state;
 }
