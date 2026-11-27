@@ -79,10 +79,11 @@ function LoadedModule({ module, codeUrl, itemId, router }: LoadedModuleProps) {
     return <ModuleFailure module={module} message={messageOf(query.error) ?? 'It could not be loaded.'} />;
   }
   const Loaded = query.data;
+  const moduleRouter = router ?? cardRouter;
   return (
-    <ModuleErrorBoundary key={codeUrl} module={module}>
+    <ModuleErrorBoundary key={codeUrl} module={module} path={moduleRouter.path}>
       <ModuleContext.Provider value={scope}>
-        <ModuleRouterContext.Provider value={router ?? cardRouter}>
+        <ModuleRouterContext.Provider value={moduleRouter}>
           <Loaded />
         </ModuleRouterContext.Provider>
       </ModuleContext.Provider>
@@ -128,6 +129,8 @@ function ModuleFailure({ module, message }: ModuleFailureProps) {
 
 interface ModuleErrorBoundaryProps {
   module: ModuleCardModule;
+  /** The module's path. A failure is cleared when it changes, so Back leaves a subpage that threw. */
+  path: string;
   /** The module's component, in its scope. React's error boundaries take their subject as children. */
   children: ReactNode;
 }
@@ -143,7 +146,7 @@ interface ModuleErrorBoundaryState {
  *
  * @remarks
  * A class, because React only offers error boundaries as classes. It is keyed by code URL where it is
- * used, so a new version of the module starts without the old one's error.
+ * used, so a new version of the module starts without the old one's error; a new path clears it too.
  */
 class ModuleErrorBoundary extends Component<ModuleErrorBoundaryProps, ModuleErrorBoundaryState> {
   state: ModuleErrorBoundaryState = { error: null, hasFailed: false };
@@ -166,6 +169,18 @@ class ModuleErrorBoundary extends Component<ModuleErrorBoundaryProps, ModuleErro
    */
   componentDidCatch(error: unknown, info: ErrorInfo): void {
     console.error(`Module "${this.props.module.name}" threw while drawing.`, error, info.componentStack);
+  }
+
+  /**
+   * Draws the module again once its path has moved on from the one that threw.
+   *
+   * @param previous - The props of the last render.
+   */
+  componentDidUpdate(previous: ModuleErrorBoundaryProps): void {
+    const hasMoved = previous.path !== this.props.path;
+    if (hasMoved && this.state.hasFailed) {
+      this.setState({ error: null, hasFailed: false });
+    }
   }
 
   /**
