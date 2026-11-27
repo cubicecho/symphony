@@ -9,17 +9,16 @@ import { useEffect, useRef, useState } from 'react';
 import { MS_PER_SECOND } from '@/core/consts';
 import { postGraphQL, RequestError, streamGraphQL } from '@/core/gql';
 import { type ModuleScope, moduleQueryPrefix, useModuleScope } from './module-context.ts';
+import {
+  callOnEvent,
+  createReconnectPlanner,
+  DEFAULT_MAX_EVENTS,
+  keepLatest,
+  maxEventsProblem,
+} from './subscription-state.ts';
 
 /** The first operation name in a document: `query RecentOrders(…)` gives `RecentOrders`. */
 const OPERATION_NAME = /\b(?:query|mutation|subscription)\s+([_A-Za-z][_0-9A-Za-z]*)/;
-/** How many events `useSubscription` keeps when `maxEvents` is left out. */
-const DEFAULT_MAX_EVENTS = 100;
-/** The wait before reconnecting a dropped subscription the first time, in milliseconds. */
-const FIRST_RECONNECT_DELAY_MS = 1000;
-/** The longest wait between two reconnects, in milliseconds. */
-const MAX_RECONNECT_DELAY_MS = 30_000;
-/** How much the wait grows after each drop in a row. */
-const RECONNECT_BACKOFF_FACTOR = 2;
 
 /**
  * Where a subscription is. `idle` while `enabled` is false; `connecting` while it opens, and again while it waits to
@@ -34,9 +33,12 @@ export interface SubscriptionOptions<T> {
   variables?: Record<string, unknown> | undefined;
   /** False holds the subscription back, or closes it, until it is true. */
   enabled?: boolean | undefined;
-  /** How many of the latest events `events` keeps. Default 100. */
+  /** How many of the latest events `events` keeps: a whole number, 0 for none. Default 100. */
   maxEvents?: number | undefined;
-  /** Called with each event's `data` as it arrives: to refetch a query when a run ends, say. */
+  /**
+   * Called with each event's `data` as it arrives: to refetch a query when a run ends, say. A throw in it lands in
+   * `error` and leaves the stream open.
+   */
   onEvent?: ((data: T) => void) | undefined;
 }
 
@@ -47,7 +49,7 @@ export interface SubscriptionResult<T> {
   /** The newest event's `data`. */
   latest: T | undefined;
   status: SubscriptionStatus;
-  /** Why it was refused, why it last dropped, or the GraphQL errors the last event carried. */
+  /** Why it was refused, why it last dropped, the GraphQL errors the last event carried, or what `onEvent` threw. */
   error: Error | null;
 }
 
@@ -286,13 +288,18 @@ export function useSubscription<T>(document: Document, options: SubscriptionOpti
       setState(freshSubscription('error', missingUpstreamError(upstream)));
       return;
     }
+    const badMaxEvents = maxEventsProblem(maxEvents);
+    if (badMaxEvents !== null) {
+      setState(freshSubscription('error', badMaxEvents));
+      return;
+    }
     const closer = new AbortController();
     const operation = {
       query,
       variables: JSON.parse(variablesKey) ?? undefined,
       operationName: operationNameOf(query),
     };
-    let reconnectDelayMs = FIRST_RECONNECT_DELAY_MS;
+    const reconnects = createReconnectPlanner();
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     setState(freshSubscription('connecting'));
 
@@ -303,10 +310,10 @@ export function useSubscription<T>(document: Document, options: SubscriptionOpti
           operation,
           {
             onOpen: () => {
-              reconnectDelayMs = FIRST_RECONNECT_DELAY_MS;
               setState((current) => ({ ...current, status: 'open', error: null }));
             },
             onNext: (result) => {
+              reconnects.received();
               const errors = result.errors ?? [];
               const error = errors.length > 0 ? new RequestError(errors) : null;
               const data = result.data;
@@ -315,12 +322,16 @@ export function useSubscription<T>(document: Document, options: SubscriptionOpti
                 return;
               }
               setState((current) => ({
-                events: [...current.events, data].slice(-maxEvents),
+                events: keepLatest(current.events, data, maxEvents),
                 latest: data,
                 status: 'open',
                 error,
               }));
-              onEventRef.current?.(data);
+              const thrown = callOnEvent(onEventRef.current, data);
+              if (thrown !== null) {
+                console.error(thrown);
+                setState((current) => ({ ...current, error: thrown }));
+              }
             },
           },
           closer.signal,
@@ -336,8 +347,7 @@ export function useSubscription<T>(document: Document, options: SubscriptionOpti
           return;
         }
         setState((current) => ({ ...current, status: 'connecting', error: reason }));
-        reconnectTimer = setTimeout(() => void connect(), reconnectDelayMs);
-        reconnectDelayMs = Math.min(reconnectDelayMs * RECONNECT_BACKOFF_FACTOR, MAX_RECONNECT_DELAY_MS);
+        reconnectTimer = setTimeout(() => void connect(), reconnects.dropped());
       }
     };
     void connect();
