@@ -359,3 +359,5 @@ export function useSubscription<T>(document: Document, options: SubscriptionOpti
 
   return state;
 }
+
+export { RouteLink, type RouteState, Routes, type RouteView, useRoute } from './module-routes.tsx';

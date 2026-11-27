@@ -36,7 +36,7 @@ export function PageGrid({ page, isEditing, onProblem }: PageGridProps) {
               <ItemMenu page={page} item={item} index={index} onProblem={onProblem} />
             </div>
           ) : null}
-          <ModuleCard module={item.module} />
+          <ModuleCard module={item.module} itemId={item.id} />
         </li>
       ))}
     </ul>
