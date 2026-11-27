@@ -2,8 +2,9 @@
 import { writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { buildSchema, printSchema } from 'graphql';
+import { PROPOSAL_TYPE_DEFS } from './proposal-schema.ts';
 import { TYPE_DEFS } from './type-defs.ts';
 
 const target = fileURLToPath(new URL('../../schema.graphql', import.meta.url));
-await writeFile(target, `${printSchema(buildSchema(TYPE_DEFS))}\n`, 'utf-8');
+await writeFile(target, `${printSchema(buildSchema(`${TYPE_DEFS}\n${PROPOSAL_TYPE_DEFS}`))}\n`, 'utf-8');
 console.log(`[codegen] wrote ${target}`);
