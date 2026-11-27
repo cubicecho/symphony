@@ -137,6 +137,56 @@ export default function A() {
     expect(result.errors).toEqual([]);
   });
 
+  it('leaves alone a same-named navigate in another component', async () => {
+    const source = `import { Routes, useRoute } from 'symphony';
+function List() {
+  const { navigate } = useRoute();
+  navigate('/');
+  return null;
+}
+function Other({ navigate }: { navigate: (path: string) => void }) {
+  navigate('/somewhere/else');
+  const route = { navigate: (path: string) => path };
+  route.navigate('/nor/here');
+  return null;
+}
+export default function A() {
+  return <Routes routes={{ '/': () => <List /> }} />;
+}`;
+    expect((await compile(source)).errors).toEqual([]);
+  });
+
+  it('reads the table a name is bound to where Routes uses it, not a top-level one it shadows', async () => {
+    const source = `import { Routes, RouteLink } from 'symphony';
+const ROUTES = { '/': () => null };
+export default function A() {
+  const ROUTES = { '/': () => <RouteLink to="/local" />, '/local': () => null };
+  return <Routes routes={ROUTES} />;
+}`;
+    const unread = `import { Routes, RouteLink } from 'symphony';
+const ROUTES = { '/': () => null };
+function build() {
+  return { '/': () => <RouteLink to="/built" />, '/built': () => null };
+}
+export default function A() {
+  const ROUTES = build();
+  return <Routes routes={ROUTES} />;
+}`;
+    expect((await compile(source)).errors).toEqual([]);
+    expect((await compile(unread)).errors).toEqual([]);
+  });
+
+  it('ignores a local component that shadows the runtime one', async () => {
+    const source = `import { Routes } from 'symphony';
+function RouteLink({ to }: { to: string }) {
+  return <a href={to} />;
+}
+export default function A() {
+  return <Routes routes={{ '/': () => <RouteLink to="https://example.com" /> }} />;
+}`;
+    expect((await compile(source)).errors).toEqual([]);
+  });
+
   it('checks nothing against a table it cannot read, or when there is no Routes', async () => {
     const spread = `import { Routes, RouteLink } from 'symphony';
 const MORE = { '/b': () => null };

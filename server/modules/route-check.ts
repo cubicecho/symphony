@@ -1,15 +1,9 @@
 // Checks a module's literal route paths against its route table: every `<RouteLink to="…">` and `navigate('…')` with
 // a path the compiler can read must match a route declared in `<Routes routes={{…}}>`. The browser matches paths by
 // the same rule (web/src/modules/route-match.ts); tests/modules/route-check.test.ts holds the two together.
-import type { Expression, JSXOpeningElement, Node, ObjectExpression, Program } from '@babel/types';
-import {
-  isRuntimeReference,
-  positionOf,
-  type RuntimeBindings,
-  runtimeBindings,
-  type SourcePosition,
-  visitNodes,
-} from './gql-extract.ts';
+import traverse, { type Scope } from '@babel/traverse';
+import type { Expression, File, JSXOpeningElement, Node, ObjectExpression } from '@babel/types';
+import { positionOf, RUNTIME_SPECIFIER, type SourcePosition } from './gql-extract.ts';
 
 /** The runtime exports the check follows. */
 const ROUTES_EXPORT = 'Routes';
@@ -19,6 +13,8 @@ const USE_ROUTE_EXPORT = 'useRoute';
 const ROUTES_PROP = 'routes';
 const TO_PROP = 'to';
 const NAVIGATE_MEMBER = 'navigate';
+/** What `runtimeImportOf` gives for `import * as runtime from 'symphony'`. */
+const NAMESPACE_IMPORT = '*';
 
 /** What starts a parameter segment in a route: `/orders/:id`. */
 const PARAM_PREFIX = ':';
@@ -73,25 +69,143 @@ function unwrapped(node: Expression): Expression {
 }
 
 /**
- * Finds the module's top-level `const NAME = { … }` objects, for a route table passed by name.
+ * Finds what a name is bound to where it is used, when that is an import from the runtime.
  *
- * @param program - The parsed module.
- * @returns Each object literal by its name.
+ * @param scope - The scope the name is used in.
+ * @param name - The name.
+ * @returns The runtime export it names, `NAMESPACE_IMPORT` for `import * as runtime`, or null when the name is
+ * bound to something else there (a local that shadows the import, say) or to nothing.
  */
-function topLevelObjects(program: Program): Map<string, ObjectExpression> {
-  const objects = new Map<string, ObjectExpression>();
-  for (const statement of program.body) {
-    const declaration = statement.type === 'ExportNamedDeclaration' ? statement.declaration : statement;
-    if (declaration?.type === 'VariableDeclaration' && declaration.kind === 'const') {
-      for (const declarator of declaration.declarations) {
-        const init = declarator.init == null ? null : unwrapped(declarator.init);
-        if (declarator.id.type === 'Identifier' && init?.type === 'ObjectExpression') {
-          objects.set(declarator.id.name, init);
-        }
-      }
-    }
+function runtimeImportOf(scope: Scope, name: string): string | null {
+  const binding = scope.getBinding(name);
+  if (binding === undefined) {
+    return null;
   }
-  return objects;
+  const specifier = binding.path.node;
+  const declaration = binding.path.parent;
+  const isRuntimeImport = declaration?.type === 'ImportDeclaration' && declaration.source.value === RUNTIME_SPECIFIER;
+  if (isRuntimeImport === false) {
+    return null;
+  }
+  if (specifier.type === 'ImportNamespaceSpecifier') {
+    return NAMESPACE_IMPORT;
+  }
+  if (specifier.type === 'ImportSpecifier') {
+    return specifier.imported.type === 'Identifier' ? specifier.imported.name : specifier.imported.value;
+  }
+  return null;
+}
+
+/**
+ * Tells whether an expression or a JSX tag name is one of the runtime's exports, where it is used.
+ *
+ * @param scope - The scope it is used in.
+ * @param node - The expression or tag name.
+ * @param exportName - The export.
+ * @returns True for `Routes`, an aliased name, or `runtime.Routes`, each bound to the runtime's import.
+ */
+function isRuntimeExport(scope: Scope, node: Node, exportName: string): boolean {
+  if (node.type === 'Identifier' || node.type === 'JSXIdentifier') {
+    return runtimeImportOf(scope, node.name) === exportName;
+  }
+  if (node.type === 'MemberExpression' && node.computed === false && node.object.type === 'Identifier') {
+    const isNamed = node.property.type === 'Identifier' && node.property.name === exportName;
+    return isNamed && runtimeImportOf(scope, node.object.name) === NAMESPACE_IMPORT;
+  }
+  if (node.type === 'JSXMemberExpression' && node.object.type === 'JSXIdentifier') {
+    return node.property.name === exportName && runtimeImportOf(scope, node.object.name) === NAMESPACE_IMPORT;
+  }
+  return false;
+}
+
+/**
+ * Tells whether an expression is a `useRoute()` call.
+ *
+ * @param scope - The scope it is in.
+ * @param node - The expression.
+ * @returns True for a call of the runtime's `useRoute`.
+ */
+function isUseRouteCall(scope: Scope, node: Node): boolean {
+  return node.type === 'CallExpression' && isRuntimeExport(scope, node.callee, USE_ROUTE_EXPORT);
+}
+
+/**
+ * Finds what a name holds when it was declared from `useRoute()`.
+ *
+ * @param scope - The scope the name is used in.
+ * @param name - The name.
+ * @returns `result` for `const route = useRoute()`, `navigate` for `const { navigate } = useRoute()` (renamed or
+ * not), or null when the name, where it is used, is bound to anything else.
+ */
+function useRouteBindingOf(scope: Scope, name: string): 'result' | 'navigate' | null {
+  const binding = scope.getBinding(name);
+  const declarator = binding?.path.node;
+  if (binding === undefined || binding.constant === false || declarator?.type !== 'VariableDeclarator') {
+    return null;
+  }
+  const isFromUseRoute = declarator.init != null && isUseRouteCall(binding.path.scope, unwrapped(declarator.init));
+  if (isFromUseRoute === false) {
+    return null;
+  }
+  if (declarator.id.type === 'Identifier') {
+    return 'result';
+  }
+  const isNavigate =
+    declarator.id.type === 'ObjectPattern' &&
+    declarator.id.properties.some(
+      (property) =>
+        property.type === 'ObjectProperty' &&
+        property.computed === false &&
+        property.key.type === 'Identifier' &&
+        property.key.name === NAVIGATE_MEMBER &&
+        property.value.type === 'Identifier' &&
+        property.value.name === name,
+    );
+  return isNavigate ? 'navigate' : null;
+}
+
+/**
+ * Tells whether a call's callee is the `navigate` of a `useRoute()`.
+ *
+ * @param scope - The scope the call is in.
+ * @param callee - The callee.
+ * @returns True for `navigate(…)` destructured from `useRoute()`, `route.navigate(…)` on its result, and
+ * `useRoute().navigate(…)`.
+ */
+function isNavigateCallee(scope: Scope, callee: Node): boolean {
+  if (callee.type === 'Identifier') {
+    return useRouteBindingOf(scope, callee.name) === 'navigate';
+  }
+  const isNavigateMember =
+    callee.type === 'MemberExpression' &&
+    callee.computed === false &&
+    callee.property.type === 'Identifier' &&
+    callee.property.name === NAVIGATE_MEMBER;
+  if (isNavigateMember === false) {
+    return false;
+  }
+  const { object } = callee;
+  if (object.type === 'Identifier') {
+    return useRouteBindingOf(scope, object.name) === 'result';
+  }
+  return isUseRouteCall(scope, object);
+}
+
+/**
+ * Finds the object literal a `const` holds, for a route table passed by name.
+ *
+ * @param scope - The scope the name is used in.
+ * @param name - The name.
+ * @returns The object, or null when the name, where it is used, is bound to anything but a `const` object literal.
+ */
+function constObjectOf(scope: Scope, name: string): ObjectExpression | null {
+  const binding = scope.getBinding(name);
+  const declarator = binding?.path.node;
+  if (binding?.kind !== 'const' || declarator?.type !== 'VariableDeclarator' || declarator.init == null) {
+    return null;
+  }
+  const init = unwrapped(declarator.init);
+  return init.type === 'ObjectExpression' ? init : null;
 }
 
 /**
@@ -114,26 +228,6 @@ function routesOf(object: ObjectExpression): RouteTable {
     }
   }
   return { routes, isKnown };
-}
-
-/**
- * Tells whether a JSX element is one of the runtime's components.
- *
- * @param element - The opening tag.
- * @param bindings - The names the component was imported under.
- * @returns True for `<Routes>`, an aliased name, or `<runtime.Routes>`.
- */
-function isRuntimeElement(element: JSXOpeningElement, bindings: RuntimeBindings): boolean {
-  const { name } = element;
-  if (name.type === 'JSXIdentifier') {
-    return bindings.direct.has(name.name);
-  }
-  return (
-    name.type === 'JSXMemberExpression' &&
-    name.object.type === 'JSXIdentifier' &&
-    bindings.namespaces.has(name.object.name) &&
-    name.property.name === bindings.exportName
-  );
 }
 
 /**
@@ -220,68 +314,39 @@ export function pathFitsRoute(route: string, path: string): boolean {
 /**
  * Finds the paths a module goes to: `RouteLink to`, and `navigate` from `useRoute()`, destructured or not.
  *
- * @param program - The parsed module.
+ * Names are resolved where they are used, so a local that shadows an import or a table is not mistaken for it.
+ *
+ * @param file - The parsed module.
  * @returns Each path the compiler can read, and the route tables it declares.
  */
-function collect(program: Program): { tables: RouteTable[]; uses: PathUse[] } {
-  const routesBindings = runtimeBindings(program, ROUTES_EXPORT);
-  const linkBindings = runtimeBindings(program, ROUTE_LINK_EXPORT);
-  const useRouteBindings = runtimeBindings(program, USE_ROUTE_EXPORT);
-  const objects = topLevelObjects(program);
+function collect(file: File): { tables: RouteTable[]; uses: PathUse[] } {
   const tables: RouteTable[] = [];
   const uses: PathUse[] = [];
-  /** Names `navigate` was destructured into, and names holding a `useRoute()` result. */
-  const navigateNames = new Set<string>();
-  const routeNames = new Set<string>();
-  const navigateCalls: { callee: Node; argument: Node }[] = [];
-
-  const isUseRouteCall = (node: Node): boolean =>
-    node.type === 'CallExpression' && isRuntimeReference(node.callee, useRouteBindings);
-
-  visitNodes(program, (node) => {
-    if (node.type === 'JSXOpeningElement' && isRuntimeElement(node, routesBindings)) {
-      const value = propValue(node, ROUTES_PROP);
-      const object = value?.type === 'Identifier' ? objects.get(value.name) : value;
-      tables.push(object?.type === 'ObjectExpression' ? routesOf(object) : { routes: [], isKnown: false });
-    } else if (node.type === 'JSXOpeningElement' && isRuntimeElement(node, linkBindings)) {
-      const value = propValue(node, TO_PROP);
-      const use = value === null ? null : pathUseOf(value, `RouteLink ${TO_PROP}`);
+  traverse(file, {
+    JSXOpeningElement(path) {
+      const { node, scope } = path;
+      if (isRuntimeExport(scope, node.name, ROUTES_EXPORT)) {
+        const value = propValue(node, ROUTES_PROP);
+        const object = value?.type === 'Identifier' ? constObjectOf(scope, value.name) : value;
+        tables.push(object?.type === 'ObjectExpression' ? routesOf(object) : { routes: [], isKnown: false });
+      } else if (isRuntimeExport(scope, node.name, ROUTE_LINK_EXPORT)) {
+        const value = propValue(node, TO_PROP);
+        const use = value === null ? null : pathUseOf(value, `RouteLink ${TO_PROP}`);
+        if (use !== null) {
+          uses.push(use);
+        }
+      }
+    },
+    CallExpression(path) {
+      const { node, scope } = path;
+      const [argument] = node.arguments;
+      const use =
+        argument !== undefined && isNavigateCallee(scope, node.callee) ? pathUseOf(argument, NAVIGATE_MEMBER) : null;
       if (use !== null) {
         uses.push(use);
       }
-    } else if (node.type === 'VariableDeclarator' && node.init != null && isUseRouteCall(node.init)) {
-      if (node.id.type === 'Identifier') {
-        routeNames.add(node.id.name);
-      } else if (node.id.type === 'ObjectPattern') {
-        for (const property of node.id.properties) {
-          const isNavigate =
-            property.type === 'ObjectProperty' &&
-            property.computed === false &&
-            property.key.type === 'Identifier' &&
-            property.key.name === NAVIGATE_MEMBER;
-          if (isNavigate && property.value.type === 'Identifier') {
-            navigateNames.add(property.value.name);
-          }
-        }
-      }
-    } else if (node.type === 'CallExpression' && node.arguments[0] !== undefined) {
-      navigateCalls.push({ callee: node.callee, argument: node.arguments[0] });
-    }
+    },
   });
-
-  for (const { callee, argument } of navigateCalls) {
-    const isDestructured = callee.type === 'Identifier' && navigateNames.has(callee.name);
-    const isMember =
-      callee.type === 'MemberExpression' &&
-      callee.computed === false &&
-      callee.property.type === 'Identifier' &&
-      callee.property.name === NAVIGATE_MEMBER &&
-      ((callee.object.type === 'Identifier' && routeNames.has(callee.object.name)) || isUseRouteCall(callee.object));
-    const use = isDestructured || isMember ? pathUseOf(argument, NAVIGATE_MEMBER) : null;
-    if (use !== null) {
-      uses.push(use);
-    }
-  }
   return { tables, uses };
 }
 
@@ -300,12 +365,12 @@ function unmatchedMessage(use: PathUse, routes: readonly string[]): string {
 /**
  * Checks every route the module declares, and every path it goes to that the compiler can read.
  *
- * @param program - The parsed module.
+ * @param file - The parsed module.
  * @returns The problems, in source order. A module with no `Routes`, or one whose table can't be read, has its paths
  * left unchecked.
  */
-export function findRouteProblems(program: Program): RouteProblem[] {
-  const { tables, uses } = collect(program);
+export function findRouteProblems(file: File): RouteProblem[] {
+  const { tables, uses } = collect(file);
   const problems: { problem: RouteProblem; offset: number }[] = [];
   const declared = tables.flatMap((table) => table.routes);
   const routes = declared.map(({ route }) => route);

@@ -50,7 +50,7 @@ export interface GqlUses {
 }
 
 /** The local names one of the runtime's exports is reachable by. */
-export interface RuntimeBindings {
+interface RuntimeBindings {
   /** The export: `gql`, `Routes`. */
   exportName: string;
   /** Names bound by `import { gql }` or `import { gql as g }`. */
@@ -113,7 +113,7 @@ export function positionOf(node: Node): SourcePosition | null {
  * @param exportName - The export: `gql`, `Routes`.
  * @returns The direct and namespace bindings.
  */
-export function runtimeBindings(program: Program, exportName: string): RuntimeBindings {
+function runtimeBindings(program: Program, exportName: string): RuntimeBindings {
   const bindings: RuntimeBindings = { exportName, direct: new Set(), namespaces: new Set() };
   for (const statement of program.body) {
     const isRuntimeImport = statement.type === 'ImportDeclaration' && statement.source.value === RUNTIME_SPECIFIER;
@@ -141,7 +141,7 @@ export function runtimeBindings(program: Program, exportName: string): RuntimeBi
  * @param bindings - The names the export was imported under.
  * @returns True for `gql`, an aliased name, or `runtime.gql`.
  */
-export function isRuntimeReference(node: Node, bindings: RuntimeBindings): boolean {
+function isRuntimeReference(node: Node, bindings: RuntimeBindings): boolean {
   if (node.type === 'Identifier') {
     return bindings.direct.has(node.name);
   }
