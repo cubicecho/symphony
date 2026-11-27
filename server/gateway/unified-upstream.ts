@@ -2,8 +2,8 @@
 // decorating the upstream service the admin API, /mcp, /proxy and the modules see. The unified gateway itself
 // composes from the undecorated service, so it never composes from its own output.
 import { badInput, ErrorCode } from '../core/errors.ts';
-import type { Upstream, UpstreamInput, UpstreamService } from '../core/services.ts';
-import { errorBody, refusalOf } from '../upstreams/upstream-service.ts';
+import type { GraphQLResponseBody, Upstream, UpstreamInput, UpstreamService } from '../core/services.ts';
+import { errorBody, isSubscriptionRequest, refusalOf } from '../upstreams/upstream-service.ts';
 import { UNIFIED_ENDPOINT, type UnifiedGatewayService } from './unified-service.ts';
 
 /**
@@ -41,6 +41,18 @@ function refuseBuiltIn(idOrName: string, what: string): void {
       `"${UNIFIED_UPSTREAM_NAME}" is the built-in unified API and can't be ${what}: it follows the concepts, the wiring and the other upstreams.`,
     );
   }
+}
+
+/**
+ * Refuses a subscription to the built-in upstream, which doesn't stream them.
+ *
+ * @returns The body, naming where to subscribe instead.
+ */
+function subscriptionRefusal(): GraphQLResponseBody {
+  return errorBody(
+    `The ${UNIFIED_UPSTREAM_NAME} API does not stream subscriptions yet. Subscribe through the upstream that serves the field: tag the document gql.from('<upstream>').`,
+    ErrorCode.BadUserInput,
+  );
 }
 
 /**
@@ -104,18 +116,16 @@ export function withUnifiedUpstream(upstreams: UpstreamService, unified: ServedG
       if (isUnifiedUpstream(id) === false) {
         return upstreams.subscribe(id, request, options);
       }
-      return {
-        isOpen: false,
-        body: errorBody(
-          `The ${UNIFIED_UPSTREAM_NAME} API does not stream subscriptions yet. Subscribe through the upstream that serves the field.`,
-          ErrorCode.BadUserInput,
-        ),
-      };
+      return { isOpen: false, body: subscriptionRefusal() };
     },
 
     execute: async (id, request) => {
       if (isUnifiedUpstream(id) === false) {
         return upstreams.execute(id, request);
+      }
+      // Refused the same way whether it came as JSON or as a stream, so the caller isn't sent to SSE in vain.
+      if (isSubscriptionRequest(request)) {
+        return subscriptionRefusal();
       }
       const schema = unified.servedSchema();
       if (schema === null) {

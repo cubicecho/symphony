@@ -1,11 +1,10 @@
 // The tools that read an upstream: what there is, its schema, and real data from it.
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { parse } from 'graphql';
 import { z } from 'zod';
 import { MCP_DEFAULTS } from '../core/defaults.ts';
 import { badInput } from '../core/errors.ts';
 import type { Services } from '../core/services.ts';
-import { isSubscription } from '../upstreams/upstream-service.ts';
+import { isSubscriptionRequest } from '../upstreams/upstream-service.ts';
 import { jsonResult, textResult } from './answers.ts';
 import { printTypeWithNeighbours, searchSchema } from './schema-text.ts';
 import { guard, requireSchema, requireUpstream } from './tool-kit.ts';
@@ -22,13 +21,7 @@ const upstreamArg = z.string().min(1).describe("The upstream's name (from `list_
  * on, so the upstream service reports where.
  */
 function refuseSubscription(query: string, operationName: string | undefined): void {
-  let document: ReturnType<typeof parse>;
-  try {
-    document = parse(query);
-  } catch {
-    return;
-  }
-  if (isSubscription(document, operationName)) {
+  if (isSubscriptionRequest({ query, operationName: operationName ?? null })) {
     throw badInput(
       "run_query can't run a subscription: a tool call can't hold a stream open. Look in the schema (`search_schema`) for a query that returns what has happened so far, such as a list of events after a sequence number (Task Server's `run_events(runId, afterSeq)`), and run that instead. A module follows the subscription live with `useSubscription`.",
     );

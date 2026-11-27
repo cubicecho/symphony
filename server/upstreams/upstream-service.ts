@@ -179,28 +179,37 @@ export function isSubscription(document: DocumentNode, operationName?: string | 
 }
 
 /**
- * Refuses an operation sent over the wrong transport.
+ * Whether a request's operation is a subscription, without validating it.
+ *
+ * @param request - The request.
+ * @returns True for a subscription. False for anything else, a document that doesn't parse among them: the JSON path
+ * reports that.
+ */
+export function isSubscriptionRequest(request: GraphQLRequest): boolean {
+  try {
+    return isSubscription(parse(request.query), request.operationName);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Refuses a subscription that arrived as plain JSON, which can't carry a stream.
  *
  * @param document - The parsed, valid document.
  * @param request - The request.
  * @param transport - How it arrived.
- * @returns A body saying how to send it, or null when it matches.
+ * @returns A body saying how to send it, or null when it may go on.
  */
 function transportRefusalOf(
   document: DocumentNode,
   request: GraphQLRequest,
   transport: ProxyTransport,
 ): GraphQLResponseBody | null {
-  const isStreamed = isSubscription(document, request.operationName);
-  if (transport === ProxyTransport.Json && isStreamed) {
+  const isStreamedOverJson = transport === ProxyTransport.Json && isSubscription(document, request.operationName);
+  if (isStreamedOverJson) {
     return errorBody(
       `This is a subscription, which streams. Post it with \`accept: ${EVENT_STREAM}\` (a module's useSubscription does).`,
-      ErrorCode.BadUserInput,
-    );
-  }
-  if (transport === ProxyTransport.Stream && isStreamed === false) {
-    return errorBody(
-      "Only a subscription streams. Post a query or a mutation as plain JSON (a module's useQuery or useMutation does).",
       ErrorCode.BadUserInput,
     );
   }
@@ -213,7 +222,7 @@ function transportRefusalOf(
  * @param name - The upstream's name, for the message.
  * @param schema - Its cached schema; null when it was never fetched.
  * @param request - The request.
- * @param [transport] - How it arrived: a subscription must stream, and nothing else may.
+ * @param [transport] - How it arrived: a subscription sent as JSON is refused.
  * @returns A body with the problems, or null when the request may be sent.
  */
 export function refusalOf(

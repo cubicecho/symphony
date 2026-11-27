@@ -28,7 +28,7 @@ import { buildSchema, type Context } from '../graphql/schema.ts';
 import { createMcpHandler } from '../mcp/endpoint.ts';
 import { createModuleService } from '../modules/module-service.ts';
 import { createPageService } from '../pages/page-service.ts';
-import { createUpstreamService } from '../upstreams/upstream-service.ts';
+import { createUpstreamService, isSubscriptionRequest } from '../upstreams/upstream-service.ts';
 import { healthHandler } from './health.ts';
 import { createStreamProxy, type StreamProxy, wantsStream } from './stream-proxy.ts';
 
@@ -163,14 +163,14 @@ export function createApp({ db, mcpKey, checkDatabase, dist, subscriptions, ...d
   app.all(MCP_ENDPOINT, json, createMcpHandler(services, { key: mcpKey, version: version() }));
 
   // The browser's door to an upstream. Every document is checked against the cached schema first. A subscription
-  // asks for `text/event-stream` and streams; everything else is answered once, as JSON.
+  // that asks for `text/event-stream` streams; a query or a mutation is answered once, as JSON, whatever it accepts.
   app.post('/proxy/:upstreamId', json, async (req, res) => {
     const request = graphqlRequestOf(req.body);
     if (request === null) {
       res.status(HttpStatus.BadRequest).json({ errors: [{ message: 'Send JSON with a "query" string.' }] });
       return;
     }
-    if (wantsStream(req)) {
+    if (isSubscriptionRequest(request) && wantsStream(req)) {
       await streams.handle(req.params.upstreamId, request, res);
       return;
     }

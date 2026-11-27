@@ -1,8 +1,14 @@
 import type { AddressInfo } from 'node:net';
+import { PassThrough } from 'node:stream';
 import { sql } from 'drizzle-orm';
+import express from 'express';
+import { SUBSCRIPTION_DEFAULTS } from '../../server/core/defaults.ts';
+import { notFound } from '../../server/core/errors.ts';
+import type { UpstreamService } from '../../server/core/services.ts';
 import type { OpenedDatabase } from '../../server/db/client.ts';
+import { UNIFIED_UPSTREAM_ID } from '../../server/gateway/unified-upstream.ts';
 import { createApp } from '../../server/http/app.ts';
-import type { StreamProxy } from '../../server/http/stream-proxy.ts';
+import { createStreamProxy, type StreamProxy, writeWithBackpressure } from '../../server/http/stream-proxy.ts';
 import { RequestError, StreamDroppedError, streamGraphQL } from '../../web/src/core/gql.ts';
 import { openTestDatabase } from '../db.ts';
 import { createRunFixture, RUN_FIXTURE_URL, type RunFixture } from '../fixtures/run-upstream.ts';
@@ -29,10 +35,16 @@ let close: () => void = () => {};
  * @param body - The request body.
  * @param [accept] - What the caller takes.
  * @param [signal] - Aborts the request.
+ * @param [target] - The upstream's id; the run fixture's when left out.
  * @returns The response.
  */
-function post(body: Record<string, unknown>, accept = 'text/event-stream', signal?: AbortSignal): Promise<Response> {
-  return fetch(`${base}/proxy/${upstreamId}`, {
+function post(
+  body: Record<string, unknown>,
+  accept = 'text/event-stream',
+  signal?: AbortSignal,
+  target = upstreamId,
+): Promise<Response> {
+  return fetch(`${base}/proxy/${target}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', accept },
     body: JSON.stringify(body),
@@ -90,7 +102,7 @@ beforeAll(async () => {
   upstreamId = upstream.id;
 });
 afterAll(async () => {
-  streams.closeAll();
+  await streams.closeAll();
   close();
   await opened.close();
 });
@@ -115,14 +127,27 @@ describe('subscriptions through the proxy', () => {
     expect(runs.openStreams()).toBe(0);
   });
 
-  it('streams only subscriptions, and answers only the rest as JSON', async () => {
-    const query = await post({ query: '{ runEvents(runId: "r1") { seq } }' });
-    expect(query.status).toBe(400);
-    expect((await query.json()).errors[0].message).toMatch(/Only a subscription streams/);
+  it('routes on the operation, not on accept: only a subscription streams', async () => {
+    const both = 'application/json, text/event-stream';
+    const query = await post({ query: '{ runEvents(runId: "r1", afterSeq: 2) { seq } }' }, both);
+    expect(query.headers.get('content-type')).toMatch(/json/);
+    expect(await query.json()).toEqual({ data: { runEvents: [{ seq: 3 }] } });
+    const subscription = await post({ query: RUN_EVENTS, variables: { runId: 'r1' } }, both);
+    expect(subscription.headers.get('content-type')).toMatch(/^text\/event-stream/);
+    expect((await readEvents(subscription)).at(-1)?.event).toBe('complete');
     const asJson = await post({ query: RUN_EVENTS, variables: { runId: 'r1' } }, 'application/json');
     expect((await asJson.json()).errors[0].message).toMatch(/text\/event-stream/);
-    const plain = await post({ query: '{ runEvents(runId: "r1", afterSeq: 2) { seq } }' }, 'application/json');
-    expect(await plain.json()).toEqual({ data: { runEvents: [{ seq: 3 }] } });
+    await runs.allClosed();
+  });
+
+  it('refuses a subscription to unified the same way on both paths', async () => {
+    const request = { query: 'subscription { anything }' };
+    const asJson = await (await post(request, 'application/json', undefined, UNIFIED_UPSTREAM_ID)).json();
+    const asStream = await post(request, undefined, undefined, UNIFIED_UPSTREAM_ID);
+    expect(asStream.status).toBe(400);
+    const streamed = await asStream.json();
+    expect(asJson.errors[0].message).toMatch(/does not stream subscriptions yet.*gql\.from/);
+    expect(streamed.errors[0].message).toBe(asJson.errors[0].message);
   });
 
   it('closes the upstream stream when the browser disconnects', async () => {
@@ -172,10 +197,61 @@ describe('subscriptions through the proxy', () => {
 
   it('closes every stream, both sides, on shutdown', async () => {
     const response = await post({ query: RUN_EVENTS, variables: { runId: 'r8', isRunning: true } });
-    await readEvents(response, (read) => read.length === 3).then(() => undefined);
+    await readEvents(response, (read) => read.length === 3);
     expect(runs.openStreams()).toBe(1);
-    streams.closeAll();
+    await streams.closeAll();
+    // Resolved only once the response had ended, so the rest of the body reads to its end at once.
+    expect(streams.openCount()).toBe(0);
+    expect(await readEvents(response)).toEqual([]);
     await runs.allClosed();
+  });
+});
+
+describe('the stream door on its own', () => {
+  it('answers a failure to open as a GraphQL error, not an empty 200', async () => {
+    const throwing = {
+      find: async () => ({ id: 'u1', name: 'gone', url: 'http://gone.test/graphql', headers: [], schema: null }),
+      subscribe: async () => {
+        throw notFound('There is no upstream "u1".');
+      },
+    } as unknown as UpstreamService;
+    const door = createStreamProxy(throwing, SUBSCRIPTION_DEFAULTS);
+    const app = express();
+    app.post('/stream', express.json(), (req, res) => door.handle('u1', req.body, res));
+    const server = app.listen(0);
+    await new Promise((resolve) => server.once('listening', resolve));
+    const { port } = server.address() as AddressInfo;
+    const response = await fetch(`http://127.0.0.1:${port}/stream`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ query: RUN_EVENTS }),
+    });
+    server.close();
+    expect(response.status).toBe(404);
+    expect((await response.json()).errors[0]).toMatchObject({
+      message: 'Couldn\'t open the stream: There is no upstream "u1".',
+      extensions: { code: 'NOT_FOUND' },
+    });
+    expect(door.openCount()).toBe(0);
+  });
+
+  it('waits for a full buffer to drain before the next write, and stops waiting on close', async () => {
+    const slow = new PassThrough({ highWaterMark: 4 });
+    const open = new AbortController();
+    let isWritten = false;
+    const writing = writeWithBackpressure(slow, 'more than four bytes', open.signal).then(() => {
+      isWritten = true;
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(isWritten).toBe(false);
+    slow.read();
+    await writing;
+    expect(isWritten).toBe(true);
+    const stuck = new PassThrough({ highWaterMark: 4 });
+    const closing = new AbortController();
+    const waiting = writeWithBackpressure(stuck, 'more than four bytes', closing.signal);
+    closing.abort();
+    await expect(waiting).resolves.toBeUndefined();
   });
 });
 

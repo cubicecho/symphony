@@ -111,6 +111,8 @@ export interface SubscriptionSettings {
   maxEventBytes: number;
   /** How often an open stream sends the browser a comment line, so proxies on the way don't close it, in seconds. */
   keepAliveSeconds: number;
+  /** How long shutdown waits for open streams to end their responses before it cuts the connections, in milliseconds. */
+  closeGraceMs: number;
 }
 
 export const SUBSCRIPTION_DEFAULTS: Readonly<SubscriptionSettings> = Object.freeze({
@@ -119,6 +121,7 @@ export const SUBSCRIPTION_DEFAULTS: Readonly<SubscriptionSettings> = Object.free
   idleTimeoutSeconds: 300,
   maxEventBytes: 1_000_000,
   keepAliveSeconds: 15,
+  closeGraceMs: 1_000,
 });
 
 /** Bounds on a submitted module. */
