@@ -8,7 +8,7 @@ export const CompileStage = {
   Source: 'SOURCE',
   /** It imports something modules may not use. */
   Imports: 'IMPORTS',
-  /** A `gql` document does not parse or does not validate against the upstream's schema. */
+  /** A `gql` document does not parse, does not validate against its upstream's schema, or names no upstream of the module. */
   Graphql: 'GRAPHQL',
   /** esbuild could not turn it into browser code. */
   Transform: 'TRANSFORM',
@@ -34,14 +34,22 @@ export interface CompileResult {
   documents: string[];
 }
 
+/** One upstream a module reads, as a compile sees it. */
+export interface CompileUpstream {
+  /** What `gql.from('<name>')` calls it. */
+  name: string;
+  /** Its cached schema, or null when it was never fetched: then its documents only have to parse. */
+  schema: GraphQLSchema | null;
+}
+
 /** What a compile needs. */
 export interface CompileInput {
   /** The TSX source. */
   source: string;
   /** A name for the file in stack traces and source maps, such as the module's id. */
   fileName: string;
-  /** The upstream's cached schema, or null when it was never fetched: then GraphQL documents only have to parse. */
-  schema: GraphQLSchema | null;
+  /** The module's upstreams, in order. A plain `gql` document is checked against the first, the default. */
+  upstreams: readonly CompileUpstream[];
   /** Every specifier a module may import (`react`, `symphony`, `@/components/ui/button` …). */
   allowedImports: ReadonlySet<string>;
 }

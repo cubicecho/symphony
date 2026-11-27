@@ -134,16 +134,16 @@ export function buildSchema(): GraphQLSchema {
               id?: string | null;
               name: string;
               description?: string | null;
-              upstreamId: string;
+              upstreamIds: string[];
               source: string;
             };
           },
           ctx: Context,
         ) => {
-          const { id, description, upstreamId, ...rest } = args.input;
+          const { id, description, upstreamIds, ...rest } = args.input;
           const saved = await ctx.modules.save({
             ...rest,
-            upstream: upstreamId,
+            upstreams: upstreamIds,
             ...(id == null ? {} : { id }),
             ...(description == null ? {} : { description }),
           });
@@ -215,13 +215,16 @@ export function buildSchema(): GraphQLSchema {
         fetchedAt: (schema: { fetchedAt: Date }) => schema.fetchedAt.toISOString(),
       },
       Module: {
-        upstream: async (module: ModuleRecord, _args: unknown, ctx: Context) => {
-          const upstream = await ctx.upstreams.find(module.upstreamId);
-          if (upstream === null) {
-            throw notFound(`Module ${module.name}'s upstream is gone.`);
-          }
-          return upstream;
-        },
+        upstreams: (module: ModuleRecord, _args: unknown, ctx: Context) =>
+          Promise.all(
+            module.upstreamIds.map(async (id) => {
+              const upstream = await ctx.upstreams.find(id);
+              if (upstream === null) {
+                throw notFound(`Module ${module.name}'s upstream ${id} is gone.`);
+              }
+              return upstream;
+            }),
+          ),
         codeUrl: codeUrlOf,
         updatedAt: (module: ModuleRecord) => module.updatedAt.toISOString(),
       },

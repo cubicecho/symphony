@@ -13,7 +13,7 @@ fragment ModuleSummaryFields on Module {
   version
   codeUrl
   updatedAt
-  upstream {
+  upstreams {
     id
     name
     proxyPath

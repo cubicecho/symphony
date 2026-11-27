@@ -91,7 +91,7 @@ describe('the app', () => {
   it('saves and compiles a module, then serves its code by version', async () => {
     const body = await admin(
       'mutation($input: SaveModuleInput!) { saveModule(input: $input) { id status version codeUrl errors { message } } }',
-      { input: { name: 'Orders', upstreamId, source: MODULE_SOURCE } },
+      { input: { name: 'Orders', upstreamIds: [upstreamId], source: MODULE_SOURCE } },
     );
     const saved = body.data.saveModule;
     expect(saved.errors).toEqual([]);
@@ -107,7 +107,14 @@ describe('the app', () => {
   it('keeps a failing module with its errors', async () => {
     const body = await admin(
       'mutation($input: SaveModuleInput!) { saveModule(input: $input) { status version codeUrl errors { stage line } } }',
-      { input: { id: moduleId, name: 'Orders', upstreamId, source: MODULE_SOURCE.replace('total', 'nope') } },
+      {
+        input: {
+          id: moduleId,
+          name: 'Orders',
+          upstreamIds: [upstreamId],
+          source: MODULE_SOURCE.replace('total', 'nope'),
+        },
+      },
     );
     expect(body.data.saveModule).toMatchObject({ status: 'FAILED', version: 2, codeUrl: null });
     expect(body.data.saveModule.errors[0]).toMatchObject({ stage: 'GRAPHQL' });

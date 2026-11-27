@@ -1,12 +1,16 @@
-// Finds a module's GraphQL documents: the templates tagged with `gql` from 'symphony', and where each one
-// sits in the TSX, so a GraphQL error can point at the line and column in the module's own file.
-import type { Node, Program, TaggedTemplateExpression } from '@babel/types';
+// Finds a module's GraphQL documents: the templates tagged with `gql` or `gql.from('<upstream>')` from 'symphony',
+// which upstream each one is for, and where each one sits in the TSX, so a GraphQL error can point at the line and
+// column in the module's own file.
+import type { CallExpression, Node, Program, TaggedTemplateExpression } from '@babel/types';
 
 /** The specifier the runtime, and so `gql`, is imported from. */
 export const RUNTIME_SPECIFIER = 'symphony';
 
 /** The export that marks a GraphQL document. */
 const GQL_EXPORT = 'gql';
+
+/** The method on `gql` that names another of the module's upstreams: `gql.from('billing')`. */
+const FROM_METHOD = 'from';
 
 /** Node keys that hold positions, comments and parser notes, never child nodes worth visiting. */
 const SKIPPED_KEYS = new Set(['loc', 'extra', 'leadingComments', 'trailingComments', 'innerComments', 'comments']);
@@ -27,6 +31,22 @@ export interface GqlTemplate {
   start: SourcePosition;
   /** Offset of the template in the source, for ordering. */
   offset: number;
+  /** The upstream named by `gql.from('<name>')`, or null for a plain `gql`, which goes to the module's default. */
+  upstream: string | null;
+}
+
+/** A use of `gql.from` the compiler can't follow: not a string literal, or not used as a template's tag. */
+export interface GqlMisuse {
+  message: string;
+  position: SourcePosition | null;
+}
+
+/** What a module's `gql` uses come to. */
+export interface GqlUses {
+  /** Every document, in source order. */
+  templates: GqlTemplate[];
+  /** The `gql.from` calls that name no upstream the compiler can know. */
+  misuses: GqlMisuse[];
 }
 
 /** The local names `gql` is reachable by. */
@@ -112,39 +132,83 @@ function gqlBindings(program: Program): GqlBindings {
 }
 
 /**
- * Tells whether a tagged template's tag is the runtime's `gql`.
+ * Tells whether an expression is the runtime's `gql`.
  *
- * @param node - The tagged template.
+ * @param node - The expression.
  * @param bindings - The names `gql` was imported under.
- * @returns True for `gql\`…\``, an aliased name, or `runtime.gql\`…\``.
+ * @returns True for `gql`, an aliased name, or `runtime.gql`.
  */
-function isGqlTag(node: TaggedTemplateExpression, bindings: GqlBindings): boolean {
-  const { tag } = node;
-  if (tag.type === 'Identifier') {
-    return bindings.direct.has(tag.name);
+function isGqlReference(node: Node, bindings: GqlBindings): boolean {
+  if (node.type === 'Identifier') {
+    return bindings.direct.has(node.name);
   }
   return (
-    tag.type === 'MemberExpression' &&
-    tag.computed === false &&
-    tag.object.type === 'Identifier' &&
-    bindings.namespaces.has(tag.object.name) &&
-    tag.property.type === 'Identifier' &&
-    tag.property.name === GQL_EXPORT
+    node.type === 'MemberExpression' &&
+    node.computed === false &&
+    node.object.type === 'Identifier' &&
+    bindings.namespaces.has(node.object.name) &&
+    node.property.type === 'Identifier' &&
+    node.property.name === GQL_EXPORT
   );
 }
 
 /**
- * Finds every `gql` template from 'symphony' in a module, in source order.
+ * Tells whether a call is `gql.from(…)`.
+ *
+ * @param node - The call.
+ * @param bindings - The names `gql` was imported under.
+ * @returns True for `gql.from(…)`, on an aliased or namespaced `gql` too.
+ */
+function isFromCall(node: CallExpression, bindings: GqlBindings): boolean {
+  const { callee } = node;
+  return (
+    callee.type === 'MemberExpression' &&
+    callee.computed === false &&
+    callee.property.type === 'Identifier' &&
+    callee.property.name === FROM_METHOD &&
+    isGqlReference(callee.object, bindings)
+  );
+}
+
+/**
+ * Reads the upstream name a `gql.from` call passes.
+ *
+ * @param node - The call.
+ * @returns The name, or null when the call does not pass exactly one string literal.
+ */
+function fromName(node: CallExpression): string | null {
+  const [argument] = node.arguments;
+  const isLiteral = node.arguments.length === 1 && argument?.type === 'StringLiteral';
+  return isLiteral ? argument.value : null;
+}
+
+/**
+ * Finds every `gql` and `gql.from('<upstream>')` template from 'symphony' in a module, in source order.
  *
  * @param program - The parsed module.
- * @returns The templates. A template tagged by some other `gql` is left out.
+ * @returns The templates, and the `gql.from` calls that are not a template's tag with a string literal. A template
+ * tagged by some other `gql` is left out.
  */
-export function findGqlTemplates(program: Program): GqlTemplate[] {
+export function findGqlTemplates(program: Program): GqlUses {
   const bindings = gqlBindings(program);
   const templates: GqlTemplate[] = [];
+  const misuses: GqlMisuse[] = [];
+  const tagCalls = new Set<Node>();
+  const fromCalls: CallExpression[] = [];
   visitNodes(program, (node) => {
-    if (node.type !== 'TaggedTemplateExpression' || isGqlTag(node, bindings) === false) {
+    if (node.type === 'CallExpression' && isFromCall(node, bindings)) {
+      fromCalls.push(node);
       return;
+    }
+    if (node.type !== 'TaggedTemplateExpression') {
+      return;
+    }
+    const upstream = tagUpstream(node, bindings);
+    if (upstream === undefined) {
+      return;
+    }
+    if (node.tag.type === 'CallExpression') {
+      tagCalls.add(node.tag);
     }
     const { quasis, expressions } = node.quasi;
     const [first] = quasis;
@@ -159,9 +223,41 @@ export function findGqlTemplates(program: Program): GqlTemplate[] {
       interpolation: hasInterpolation ? positionOf(firstExpression) : null,
       start,
       offset: node.start ?? 0,
+      upstream,
     });
   });
-  return templates.toSorted((a, b) => a.offset - b.offset);
+  for (const call of fromCalls) {
+    const position = positionOf(call);
+    if (fromName(call) === null) {
+      const message =
+        "gql.from takes the upstream's name as one string literal, such as gql.from('billing')`…`, so the compiler knows which schema to check the document against.";
+      misuses.push({ message, position });
+    } else if (tagCalls.has(call) === false) {
+      const message =
+        "Use gql.from('…') directly as a template's tag, as in gql.from('billing')`query …`, so the compiler finds the document and checks it against that upstream.";
+      misuses.push({ message, position });
+    }
+  }
+  return {
+    templates: templates.toSorted((a, b) => a.offset - b.offset),
+    misuses: misuses.toSorted((a, b) => (a.position?.line ?? 0) - (b.position?.line ?? 0)),
+  };
+}
+
+/**
+ * Tells which upstream a tagged template is for, if its tag is the runtime's `gql`.
+ *
+ * @param node - The tagged template.
+ * @param bindings - The names `gql` was imported under.
+ * @returns Null for a plain `gql`, the name for `gql.from('<name>')`, or undefined when the tag is something else
+ * (a `gql.from` call without a string literal is something else too; it is reported as a misuse).
+ */
+function tagUpstream(node: TaggedTemplateExpression, bindings: GqlBindings): string | null | undefined {
+  const { tag } = node;
+  if (tag.type === 'CallExpression') {
+    return isFromCall(tag, bindings) ? (fromName(tag) ?? undefined) : undefined;
+  }
+  return isGqlReference(tag, bindings) ? null : undefined;
 }
 
 /**

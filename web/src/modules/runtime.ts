@@ -7,7 +7,7 @@ import {
 } from '@tanstack/react-query';
 import { MS_PER_SECOND } from '@/core/consts';
 import { postGraphQL } from '@/core/gql';
-import { moduleQueryPrefix, useModuleScope } from './module-context.ts';
+import { type ModuleScope, moduleQueryPrefix, useModuleScope } from './module-context.ts';
 
 /** The first operation name in a document: `query RecentOrders(…)` gives `RecentOrders`. */
 const OPERATION_NAME = /\b(?:query|mutation|subscription)\s+([_A-Za-z][_0-9A-Za-z]*)/;
@@ -50,14 +50,84 @@ export interface MutationResult<T, V> {
   isPending: boolean;
 }
 
+/** A document for one of the module's upstreams other than the default, as `gql.from('<name>')` makes it. */
+export interface UpstreamDocument {
+  /** The document's text. */
+  readonly query: string;
+  /** The name of the upstream it goes to. */
+  readonly upstream: string;
+}
+
+/** What the hooks take: a plain `gql` document's text, which goes to the default upstream, or a `gql.from` one. */
+export type Document = string | UpstreamDocument;
+
 /**
- * Marks a GraphQL document so the compiler finds and validates it.
+ * Marks a GraphQL document for the module's default upstream so the compiler finds and validates it.
  *
  * @param strings - The template's text. The compiler refuses a `${…}` inside it.
  * @returns The document's text.
  */
-export function gql(strings: TemplateStringsArray): string {
+function gqlTag(strings: TemplateStringsArray): string {
   return strings.join('');
+}
+
+/**
+ * Marks a GraphQL document for another of the module's upstreams: ``gql.from('billing')`query …` ``.
+ *
+ * @param upstream - The upstream's name, as a string literal so the compiler can check the document against it.
+ * @returns A tag that makes a document carrying its upstream.
+ */
+function gqlFrom(upstream: string): (strings: TemplateStringsArray) => UpstreamDocument {
+  return (strings) => ({ query: strings.join(''), upstream });
+}
+
+/**
+ * Marks a GraphQL document so the compiler finds and validates it. ``gql`…` `` is for the module's default upstream
+ * and returns the text; ``gql.from('<name>')`…` `` is for another of its upstreams.
+ */
+export const gql: typeof gqlTag & { from: typeof gqlFrom } = Object.assign(gqlTag, { from: gqlFrom });
+
+/** Where one document goes, and its text. */
+interface Routed {
+  query: string;
+  /** The upstream's name, or null for the default. */
+  upstream: string | null;
+  proxyPath: string | undefined;
+}
+
+/**
+ * Works out where a document goes.
+ *
+ * @param document - A `gql` or `gql.from` document.
+ * @param scope - The module's scope.
+ * @returns Its text, its upstream, and the proxy path, undefined when the module has no upstream by that name.
+ */
+function route(document: Document, scope: ModuleScope): Routed {
+  if (typeof document === 'string') {
+    return { query: document, upstream: null, proxyPath: scope.proxyPath === '' ? undefined : scope.proxyPath };
+  }
+  return { query: document.query, upstream: document.upstream, proxyPath: scope.proxyPaths[document.upstream] };
+}
+
+/**
+ * Sends a routed document through Symphony's proxy.
+ *
+ * @typeParam T - What the document's `data` holds.
+ * @param routed - The document and where it goes.
+ * @param variables - Its variables.
+ * @returns The `data`.
+ * @throws When the module has no such upstream, or the request fails.
+ */
+function send<T>(routed: Routed, variables: Record<string, unknown> | undefined): Promise<T> {
+  if (routed.proxyPath === undefined) {
+    const which = routed.upstream === null ? 'a default upstream' : `an upstream named "${routed.upstream}"`;
+    return Promise.reject(new Error(`This module has no ${which}. Add it to the module's upstreams.`));
+  }
+  return postGraphQL<T>(routed.proxyPath, {
+    query: routed.query,
+    variables,
+    operationName: operationNameOf(routed.query),
+  });
 }
 
 /**
@@ -71,19 +141,20 @@ function operationNameOf(document: string): string | null {
 }
 
 /**
- * Runs a query against the module's upstream, through Symphony's proxy.
+ * Runs a query against the document's upstream, through Symphony's proxy.
  *
  * @typeParam T - What the query's `data` holds.
- * @param document - A `gql` document.
+ * @param document - A `gql` or `gql.from` document.
  * @param [options] - Variables, a refetch interval, and whether it may run yet.
  * @returns The data, the error, whether it is loading, and a refetch.
  */
-export function useQuery<T>(document: string, options: QueryOptions = {}): QueryResult<T> {
-  const { moduleId, proxyPath } = useModuleScope();
+export function useQuery<T>(document: Document, options: QueryOptions = {}): QueryResult<T> {
+  const scope = useModuleScope();
+  const routed = route(document, scope);
   const { variables, refetchIntervalSeconds, enabled = true } = options;
   const query = useTanstackQuery<T, Error>({
-    queryKey: [...moduleQueryPrefix(moduleId), document, variables ?? null],
-    queryFn: () => postGraphQL<T>(proxyPath, { query: document, variables, operationName: operationNameOf(document) }),
+    queryKey: [...moduleQueryPrefix(scope.moduleId), routed.upstream, routed.query, variables ?? null],
+    queryFn: () => send<T>(routed, variables),
     enabled,
     refetchInterval: refetchIntervalSeconds === undefined ? false : refetchIntervalSeconds * MS_PER_SECOND,
   });
@@ -98,22 +169,22 @@ export function useQuery<T>(document: string, options: QueryOptions = {}): Query
 }
 
 /**
- * Runs mutations against the module's upstream. When one succeeds, every query of this module is fetched again.
+ * Runs mutations against the document's upstream. When one succeeds, every query of this module is fetched again.
  *
  * @typeParam T - What the mutation's `data` holds.
  * @typeParam V - Its variables.
- * @param document - A `gql` document.
+ * @param document - A `gql` or `gql.from` document.
  * @returns `mutate`, the last data and error, and whether a run is on its way.
  */
 export function useMutation<T, V extends Record<string, unknown> = Record<string, unknown>>(
-  document: string,
+  document: Document,
 ): MutationResult<T, V> {
-  const { moduleId, proxyPath } = useModuleScope();
+  const scope = useModuleScope();
+  const routed = route(document, scope);
   const queryClient = useQueryClient();
   const mutation = useTanstackMutation<T, Error, V | undefined>({
-    mutationFn: (variables) =>
-      postGraphQL<T>(proxyPath, { query: document, variables, operationName: operationNameOf(document) }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: moduleQueryPrefix(moduleId) }),
+    mutationFn: (variables) => send<T>(routed, variables),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: moduleQueryPrefix(scope.moduleId) }),
   });
   return {
     mutate: (variables) => mutation.mutateAsync(variables),

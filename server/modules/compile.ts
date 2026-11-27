@@ -7,7 +7,13 @@ import { GraphQLError, type GraphQLSchema, parse as parseGraphql, validate } fro
 import { MODULE_DEFAULTS } from '../core/defaults.ts';
 import { errorMessage } from '../core/errors.ts';
 import { COMPONENT_PREFIX } from './allowlist.ts';
-import { type CompileError, type CompileInput, type CompileResult, CompileStage } from './compile-result.ts';
+import {
+  type CompileError,
+  type CompileInput,
+  type CompileResult,
+  CompileStage,
+  type CompileUpstream,
+} from './compile-result.ts';
 import {
   findGqlTemplates,
   type GqlTemplate,
@@ -48,7 +54,7 @@ interface EsbuildMessage {
 /**
  * Checks and compiles one module.
  *
- * @param input - The source, its file name, the upstream's schema and the allowed imports.
+ * @param input - The source, its file name, the module's upstreams and the allowed imports.
  * @returns The errors found, the compiled code when there are none, and the GraphQL documents.
  */
 export async function compileModule(input: CompileInput): Promise<CompileResult> {
@@ -63,7 +69,7 @@ export async function compileModule(input: CompileInput): Promise<CompileResult>
   }
   const { program } = parsed.file;
   const errors: CompileError[] = [...checkDefaultExport(program), ...checkImports(program, input.allowedImports)];
-  const graphql = checkGraphql(program, input.schema);
+  const graphql = checkGraphql(program, input.upstreams);
   errors.push(...graphql.errors);
   const hasErrors = errors.length > 0;
   if (hasErrors) {
@@ -267,7 +273,7 @@ function graphqlError(error: GraphQLError, template: GqlTemplate, label: string)
  * @param template - Its template, with text.
  * @param text - The document text.
  * @param index - Its place in the module, from 0.
- * @param schema - The upstream's schema, or null to check the syntax only.
+ * @param schema - Its upstream's schema, or null to check the syntax only.
  * @returns The GRAPHQL errors.
  */
 function checkDocument(
@@ -292,15 +298,46 @@ function checkDocument(
 }
 
 /**
- * Checks every `gql` document in the module.
+ * Finds the upstream a document is for.
+ *
+ * @param name - The name `gql.from` passed, or null for a plain `gql`.
+ * @param upstreams - The module's upstreams, the default first.
+ * @returns The upstream, or undefined when the module does not read one by that name.
+ */
+function upstreamFor(name: string | null, upstreams: readonly CompileUpstream[]): CompileUpstream | undefined {
+  return name === null ? upstreams[0] : upstreams.find((upstream) => upstream.name === name);
+}
+
+/**
+ * Explains a `gql.from` name the module does not read.
+ *
+ * @param name - The name.
+ * @param upstreams - The module's upstreams.
+ * @returns An actionable message.
+ */
+function unknownUpstreamMessage(name: string, upstreams: readonly CompileUpstream[]): string {
+  const names = upstreams.map((upstream) => `"${upstream.name}"`).join(', ');
+  return `gql.from('${name}') names an upstream this module does not read. Its upstreams are ${names}: use one of those names, or add "${name}" to the module's upstreams (list_upstreams names them all).`;
+}
+
+/**
+ * Checks every `gql` document in the module, each against its own upstream's schema.
  *
  * @param program - The parsed module.
- * @param schema - The upstream's schema, or null to check the syntax only.
+ * @param upstreams - The module's upstreams, the default first.
  * @returns The GRAPHQL errors, and the text of each document without `${…}`, in source order.
  */
-function checkGraphql(program: Program, schema: GraphQLSchema | null): { errors: CompileError[]; documents: string[] } {
-  const templates = findGqlTemplates(program);
-  const errors: CompileError[] = [];
+function checkGraphql(
+  program: Program,
+  upstreams: readonly CompileUpstream[],
+): { errors: CompileError[]; documents: string[] } {
+  const { templates, misuses } = findGqlTemplates(program);
+  const errors: CompileError[] = misuses.map((misuse) => ({
+    stage: CompileStage.Graphql,
+    message: misuse.message,
+    line: misuse.position?.line ?? null,
+    column: misuse.position?.column ?? null,
+  }));
   const documents: string[] = [];
   const firstExtra = templates[maxDocuments];
   if (firstExtra !== undefined) {
@@ -309,12 +346,20 @@ function checkGraphql(program: Program, schema: GraphQLSchema | null): { errors:
   }
   for (const [index, template] of templates.entries()) {
     const { text, interpolation } = template;
+    const upstream = upstreamFor(template.upstream, upstreams);
     if (text === null) {
       const message = `GraphQL document ${index + 1} contains \${…}. Write the document as plain text and pass values as variables ($name in the document, { variables } in useQuery or mutate).`;
       errors.push({ stage: CompileStage.Graphql, message, ...(interpolation ?? template.start) });
     } else {
       documents.push(text);
-      errors.push(...checkDocument(template, text, index, schema));
+      if (upstream === undefined && template.upstream !== null) {
+        errors.push({
+          stage: CompileStage.Graphql,
+          message: unknownUpstreamMessage(template.upstream, upstreams),
+          ...template.start,
+        });
+      }
+      errors.push(...checkDocument(template, text, index, upstream?.schema ?? null));
     }
   }
   return { errors, documents };

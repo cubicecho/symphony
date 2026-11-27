@@ -108,9 +108,11 @@ export function createApp({ db, mcpKey, checkDatabase, dist, ...deps }: AppDeps)
   });
   const upstreams = withUnifiedUpstream(stored, unified);
   const modules = deps.modules ?? createModuleService({ db, upstreams });
-  // A schema that changed under its modules re-checks them, so a page shows a module that broke as failing.
+  // A schema that changed under its modules re-checks them, so a page shows a module that broke as failing. So does a
+  // rename, since `gql.from('<name>')` names an upstream by its name.
   upstreamEvents.subscribe(async (event) => {
-    if (event.change === UpstreamChange.Refreshed) {
+    const isRenamed = event.change === UpstreamChange.Updated && event.name !== event.previousName;
+    if (event.change === UpstreamChange.Refreshed || isRenamed) {
       await modules.recheck(event.id);
     }
   });

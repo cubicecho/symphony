@@ -108,7 +108,7 @@ export function useRefreshSchema() {
 }
 
 /**
- * Deletes an upstream, with its modules and their places on pages.
+ * Deletes an upstream, with every module that reads it and their places on pages.
  *
  * @returns The mutation, taking the upstream's id.
  */

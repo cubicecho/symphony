@@ -129,7 +129,8 @@ export interface ModuleRecord {
   id: string;
   name: string;
   description: string;
-  upstreamId: string;
+  /** The ids of the upstreams it reads, in order: the first is the default, which a plain `gql` document goes to. */
+  upstreamIds: string[];
   source: string;
   compiled: string | null;
   status: ModuleStatus;
@@ -144,8 +145,8 @@ export interface SaveModuleInput {
   id?: string;
   name: string;
   description?: string;
-  /** The upstream's id or name. */
-  upstream: string;
+  /** The upstreams it reads, by id or name, in order: the first is the default. At least one, none twice. */
+  upstreams: string[];
   source: string;
 }
 
@@ -162,16 +163,24 @@ export interface ModuleService {
   /**
    * Compiles and stores a module. A source that fails to compile is stored too, with its errors and no code.
    *
-   * @throws NOT_FOUND for an unknown id or upstream, BAD_USER_INPUT for an empty name or a source over the limit.
+   * @throws NOT_FOUND for an unknown id or upstream, BAD_USER_INPUT for an empty name, no upstreams, one listed twice,
+   * or a source over the limit.
    */
   save(input: SaveModuleInput): Promise<SavedModule>;
   /** @returns False when there was no such module. */
   remove(id: string): Promise<boolean>;
-  /** Compiles a source without storing it, against an upstream's schema. */
-  check(upstream: string, source: string): Promise<CompileResult>;
   /**
-   * Compiles every module of an upstream again against its schema as it is now, storing the ones whose status or
-   * errors changed. Each of those goes up a version, since its compiled code may have changed with it.
+   * Compiles a source without storing it, against its upstreams' schemas.
+   *
+   * @param upstreams - By id or name, in order: the first is the default.
+   * @param source - The TSX.
+   * @throws As `save` does for the upstreams and the source.
+   */
+  check(upstreams: string[], source: string): Promise<CompileResult>;
+  /**
+   * Compiles every module that reads an upstream (in any position) again against its upstreams' schemas as they are
+   * now, storing the ones whose status or errors changed. Each of those goes up a version, since its compiled code may
+   * have changed with it.
    *
    * @param upstream - The upstream's id or name.
    * @returns How many modules changed; 0 for an unknown upstream.

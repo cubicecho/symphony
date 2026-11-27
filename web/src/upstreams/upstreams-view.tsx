@@ -221,7 +221,7 @@ function UpstreamRow({ upstream, onEdit, onViewSchema, onProblem }: UpstreamRowP
         open={isConfirmingDelete}
         onOpenChange={setIsConfirmingDelete}
         title={`Delete ${upstream.name}?`}
-        description="Its modules are deleted with it, and taken off every page they are on. This can't be undone."
+        description="Every module that reads it, as its default upstream or beside others, is deleted with it and taken off every page it is on. This can't be undone."
         confirmLabel="Delete upstream"
         requireText={upstream.name}
         onConfirm={remove}

@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { messageOf } from '@/lib/error-message';
 import { loadModule } from './load-module.ts';
-import { ModuleContext, type ModuleScope } from './module-context.ts';
+import { ModuleContext, type ModuleScope, moduleScopeOf } from './module-context.ts';
 
 /** The module a card draws, as the pages and the editor both hold it. */
 export interface ModuleCardModule {
@@ -16,10 +16,13 @@ export interface ModuleCardModule {
   status: string;
   /** Where its compiled code is; null while it does not compile. */
   codeUrl: string | null;
-  upstream: {
-    /** Where its upstream takes GraphQL documents. */
+  /** Its upstreams, in order: the first is the default. */
+  upstreams: {
+    /** What `gql.from('<name>')` calls it. */
+    name: string;
+    /** Where it takes GraphQL documents. */
     proxyPath: string;
-  };
+  }[];
 }
 
 interface ModuleCardProps {
@@ -59,10 +62,7 @@ function LoadedModule({ module, codeUrl }: LoadedModuleProps) {
     // A code URL names one version, so what it loaded never changes.
     staleTime: Number.POSITIVE_INFINITY,
   });
-  const scope = useMemo<ModuleScope>(
-    () => ({ moduleId: module.id, proxyPath: module.upstream.proxyPath }),
-    [module.id, module.upstream.proxyPath],
-  );
+  const scope = useMemo<ModuleScope>(() => moduleScopeOf(module.id, module.upstreams), [module.id, module.upstreams]);
 
   if (query.isPending) {
     return <Skeleton className="h-32 w-full rounded-lg" aria-label={`Loading ${module.name}`} />;

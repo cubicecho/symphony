@@ -2,7 +2,7 @@
 // Introspection and proxying share one sender, so headers, secrets, timeouts and size limits are applied
 // the same way to both.
 import { createHash } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import {
   buildClientSchema,
   GraphQLError,
@@ -27,7 +27,7 @@ import {
   type UpstreamService,
 } from '../core/services.ts';
 import type { Database } from '../db/client.ts';
-import { modules, upstreamSchemas, upstreams } from '../db/schema.ts';
+import { modules, moduleUpstreams, upstreamSchemas, upstreams } from '../db/schema.ts';
 import { CONCEPT_SOURCE_NAME } from '../gateway/wiring.ts';
 import { createSecretResolver } from './secrets.ts';
 
@@ -402,9 +402,14 @@ export function createUpstreamService(
       if (row === undefined) {
         return false;
       }
-      // Modules name their upstream without a foreign key (the built-in unified upstream has no row), so they go here.
+      // Modules list their upstreams without a foreign key (the built-in unified upstream has no row), so every module
+      // that lists this one, in any position, goes here.
       await db.transaction(async (tx) => {
-        await tx.delete(modules).where(eq(modules.upstreamId, row.id));
+        const listing = tx
+          .select({ moduleId: moduleUpstreams.moduleId })
+          .from(moduleUpstreams)
+          .where(eq(moduleUpstreams.upstreamId, row.id));
+        await tx.delete(modules).where(inArray(modules.id, listing));
         await tx.delete(upstreams).where(eq(upstreams.id, row.id));
       });
       built.delete(row.id);

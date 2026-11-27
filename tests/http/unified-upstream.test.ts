@@ -1,5 +1,6 @@
 // The built-in `unified` upstream through the whole app: it is listed with the served supergraph's schema, the
-// proxy runs it in-process, it can't be changed, and its modules are re-checked whenever a recompose changes it.
+// proxy runs it in-process, it can't be changed, and its modules are re-checked whenever a recompose changes it,
+// including modules that read it beside a stored upstream.
 import type { AddressInfo } from 'node:net';
 import { sql } from 'drizzle-orm';
 import { buildClientSchema, getIntrospectionQuery, type IntrospectionQuery, printSchema } from 'graphql';
@@ -27,8 +28,25 @@ export default function Note() {
 }
 `;
 
+/** A module reading the memo upstream by default and the unified API's concept query through `gql.from`. */
+const MIXED_MODULE = `
+import { gql, useQuery } from 'symphony';
+import { CardLayout } from '@/components/card-layout';
+
+const MEMOS = gql\`query Memos { memos { id title } }\`;
+const NOTE = gql.from('unified')\`query Note { note(id: "${NOTE_ID}") { title } }\`;
+
+export default function Mixed() {
+  const memos = useQuery(MEMOS);
+  const note = useQuery(NOTE);
+  return <CardLayout title="Mixed" contentSlot={<p>{String(memos.data)}{String(note.data)}</p>} />;
+}
+`;
+
 const UPSTREAMS = '{ upstreams { id name url builtIn proxyPath schema { sdl hash } } }';
-const MODULE = 'query($id: ID!) { module(id: $id) { status version errors { message } upstream { name } } }';
+const MODULE = 'query($id: ID!) { module(id: $id) { status version errors { message } upstreams { name proxyPath } } }';
+const SAVE_MODULE =
+  'mutation($input: SaveModuleInput!) { saveModule(input: $input) { id status errors { message } upstreams { name } } }';
 
 let opened: OpenedDatabase;
 let unified: UnifiedGatewayService;
@@ -89,6 +107,7 @@ afterAll(async () => {
 
 describe('the unified upstream', () => {
   let moduleId = '';
+  let mixedId = '';
 
   it('is listed first, built in, with no schema before the first composition', async () => {
     const { body } = await post('/graphql', UPSTREAMS);
@@ -153,13 +172,54 @@ describe('the unified upstream', () => {
   });
 
   it('takes a module written against it', async () => {
-    const { body } = await post(
-      '/graphql',
-      'mutation($input: SaveModuleInput!) { saveModule(input: $input) { id status upstream { name } } }',
-      { input: { name: 'Note', upstreamId: UNIFIED_UPSTREAM_ID, source: NOTE_MODULE } },
-    );
-    expect(body.data.saveModule).toMatchObject({ status: 'READY', upstream: { name: UNIFIED_UPSTREAM_NAME } });
+    const { body } = await post('/graphql', SAVE_MODULE, {
+      input: { name: 'Note', upstreamIds: [UNIFIED_UPSTREAM_ID], source: NOTE_MODULE },
+    });
+    expect(body.data.saveModule).toMatchObject({ status: 'READY', upstreams: [{ name: UNIFIED_UPSTREAM_NAME }] });
     moduleId = body.data.saveModule.id;
+  });
+
+  it('takes a module reading a stored upstream and the unified one, each document checked against its own', async () => {
+    const { body } = await post('/graphql', SAVE_MODULE, {
+      input: { name: 'Mixed', upstreamIds: [MEMO_UPSTREAM, UNIFIED_UPSTREAM_ID], source: MIXED_MODULE },
+    });
+    expect(body.data.saveModule).toMatchObject({
+      status: 'READY',
+      errors: [],
+      upstreams: [{ name: MEMO_UPSTREAM }, { name: UNIFIED_UPSTREAM_NAME }],
+    });
+    mixedId = body.data.saveModule.id;
+    // The memo upstream has no note query: a plain gql document for it is refused.
+    const wrong = await post('/graphql', SAVE_MODULE, {
+      input: { name: 'Wrong', upstreamIds: [MEMO_UPSTREAM], source: NOTE_MODULE },
+    });
+    expect(wrong.body.data.saveModule.status).toBe('FAILED');
+    expect(wrong.body.data.saveModule.errors[0].message).toMatch(/note/);
+    await post('/graphql', 'mutation($id: ID!) { deleteModule(id: $id) }', { id: wrong.body.data.saveModule.id });
+  });
+
+  it("serves each of the mixed module's documents through its own upstream's proxy path", async () => {
+    const { body } = await post('/graphql', MODULE, { id: mixedId });
+    const paths = new Map<string, string>(
+      body.data.module.upstreams.map((upstream: { name: string; proxyPath: string }) => [
+        upstream.name,
+        upstream.proxyPath,
+      ]),
+    );
+    const memos = await post(paths.get(MEMO_UPSTREAM) ?? '', 'query Memos { memos { id title } }');
+    expect(memos.body).toEqual({ data: { memos: [{ id: 'm1', title: 'First' }] } });
+    const note = await post(paths.get(UNIFIED_UPSTREAM_NAME) ?? '', `query Note { note(id: "${NOTE_ID}") { title } }`);
+    expect(note.body).toEqual({ data: { note: null } });
+  });
+
+  it('refuses a module with no upstreams or one listed twice', async () => {
+    const none = await post('/graphql', SAVE_MODULE, { input: { name: 'None', upstreamIds: [], source: NOTE_MODULE } });
+    const twice = await post('/graphql', SAVE_MODULE, {
+      input: { name: 'Twice', upstreamIds: [UNIFIED_UPSTREAM_ID, UNIFIED_UPSTREAM_NAME], source: NOTE_MODULE },
+    });
+    for (const { body } of [none, twice]) {
+      expect(body.errors[0].extensions.code).toBe(ErrorCode.BadUserInput);
+    }
   });
 
   it('marks its module failing when a recompose drops a field it uses, and ready again when it is back', async () => {
@@ -167,9 +227,14 @@ describe('the unified upstream', () => {
     const failing = await post('/graphql', MODULE, { id: moduleId });
     expect(failing.body.data.module).toMatchObject({ status: 'FAILED', version: 2 });
     expect(failing.body.data.module.errors[0].message).toMatch(/note/);
+    // The mixed module reads unified second, and is re-checked all the same.
+    const mixedFailing = await post('/graphql', MODULE, { id: mixedId });
+    expect(mixedFailing.body.data.module).toMatchObject({ status: 'FAILED', version: 2 });
     await setNoteConcept(true);
     const ready = await post('/graphql', MODULE, { id: moduleId });
     expect(ready.body.data.module).toMatchObject({ status: 'READY', version: 3, errors: [] });
+    const mixedReady = await post('/graphql', MODULE, { id: mixedId });
+    expect(mixedReady.body.data.module).toMatchObject({ status: 'READY', version: 3, errors: [] });
   });
 
   it('leaves its modules alone when a recompose serves the same schema', async () => {
@@ -179,16 +244,21 @@ describe('the unified upstream', () => {
     expect(body.data.module).toMatchObject({ status: 'READY', version: 3 });
   });
 
-  it('still deletes a stored upstream with its modules', async () => {
+  it('still deletes a stored upstream with every module that lists it, in any position', async () => {
     const memo = await post('/graphql', `{ upstream(id: "${MEMO_UPSTREAM}") { id } }`);
     const memoId = memo.body.data.upstream.id;
-    const saved = await post('/graphql', 'mutation($input: SaveModuleInput!) { saveModule(input: $input) { id } }', {
-      input: { name: 'Memo', upstreamId: memoId, source: NOTE_MODULE },
+    const saved = await post('/graphql', SAVE_MODULE, {
+      input: { name: 'Memo', upstreamIds: [memoId], source: NOTE_MODULE },
     });
-    const memoModuleId = saved.body.data.saveModule.id;
+    const second = await post('/graphql', SAVE_MODULE, {
+      input: { name: 'Memo second', upstreamIds: [UNIFIED_UPSTREAM_ID, memoId], source: NOTE_MODULE },
+    });
+    const removedIds = [saved.body.data.saveModule.id, second.body.data.saveModule.id, mixedId];
     await post('/graphql', 'mutation($id: ID!) { deleteUpstream(id: $id) }', { id: memoId });
-    const gone = await post('/graphql', MODULE, { id: memoModuleId });
-    expect(gone.body.data.module).toBeNull();
+    for (const id of removedIds) {
+      const gone = await post('/graphql', MODULE, { id });
+      expect(gone.body.data.module).toBeNull();
+    }
     const kept = await post('/graphql', MODULE, { id: moduleId });
     expect(kept.body.data.module).not.toBeNull();
   });
