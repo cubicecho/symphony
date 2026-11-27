@@ -1,0 +1,133 @@
+fragment ConceptProblemFields on ConceptProblem {
+  concept
+  member
+  operation
+  message
+  line
+  column
+}
+
+fragment ConceptFields on Concept {
+  id
+  name
+  definition
+  servable
+  problems {
+    ...ConceptProblemFields
+  }
+  createdAt
+  updatedAt
+}
+
+query Concepts {
+  concepts {
+    ...ConceptFields
+  }
+}
+
+query Concept($idOrName: String!) {
+  concept(idOrName: $idOrName) {
+    ...ConceptFields
+  }
+}
+
+mutation SaveConcept($definition: JSON!) {
+  saveConcept(definition: $definition) {
+    ...ConceptFields
+  }
+}
+
+mutation RemoveConcept($id: ID!) {
+  removeConcept(id: $id)
+}
+
+fragment RenameFields on Rename {
+  from
+  to
+}
+
+fragment MergeKeyFields on MergeKey {
+  type
+  keyField
+  lookupField
+  keyArg
+}
+
+fragment SourceWiringFields on SourceWiring {
+  source
+  renames {
+    types {
+      ...RenameFields
+    }
+    fields {
+      ...RenameFields
+    }
+  }
+  mergeKeys {
+    ...MergeKeyFields
+  }
+  generated {
+    renames {
+      types {
+        ...RenameFields
+      }
+      fields {
+        ...RenameFields
+      }
+    }
+    mergeKeys {
+      ...MergeKeyFields
+    }
+  }
+  override
+  origins {
+    entry
+    origin
+  }
+}
+
+query SourceWiring {
+  sourceWiring {
+    ...SourceWiringFields
+  }
+}
+
+mutation SetWiringOverride($source: String!, $override: JSON!) {
+  setWiringOverride(source: $source, override: $override) {
+    ...SourceWiringFields
+  }
+}
+
+mutation ClearWiringOverride($source: String!) {
+  clearWiringOverride(source: $source)
+}
+
+query UnifiedStatus {
+  unifiedStatus {
+    state
+    endpoint
+    composedAt
+    sources {
+      name
+      kind
+    }
+    problems {
+      kind
+      source
+      concept
+      operation
+      message
+      line
+      column
+    }
+    lastError {
+      message
+      at
+      issues {
+        message
+        code
+        source
+      }
+    }
+  }
+}

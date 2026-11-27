@@ -7,7 +7,7 @@ const ADMIN_ENDPOINT = '/graphql';
 /** One entry of a response's `errors`. */
 interface GraphQLErrorEntry {
   message: string;
-  extensions?: { code?: string };
+  extensions?: { code?: string; [key: string]: unknown };
 }
 
 /** A GraphQL response body, as far as the app reads it. */
@@ -26,9 +26,13 @@ export interface GraphQLOperation {
   operationName?: string | null | undefined;
 }
 
-/** A request the server answered with errors. `code` is the first error's `extensions.code`, when it has one. */
+/**
+ * A request the server answered with errors. `code` is the first error's `extensions.code`, when it has one, and
+ * `extensions` the whole of them: a refused saveConcept carries its located problems there.
+ */
 export class RequestError extends Error {
   readonly code: string | undefined;
+  readonly extensions: Readonly<Record<string, unknown>> | undefined;
 
   /**
    * Joins the messages of a GraphQL error list into one error.
@@ -39,6 +43,7 @@ export class RequestError extends Error {
     super(errors.map((error) => error.message).join('; '));
     this.name = 'RequestError';
     this.code = errors[0]?.extensions?.code;
+    this.extensions = errors[0]?.extensions;
   }
 }
 
