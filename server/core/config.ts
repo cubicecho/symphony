@@ -31,6 +31,23 @@ function envInteger(raw: string | undefined, fallback: number): number {
 }
 
 /**
+ * Reads a positive whole-number environment variable: a limit, where zero or less would make no sense.
+ *
+ * @param name - The variable's name, for the message.
+ * @param fallback - Used when it is unset or empty.
+ * @returns The number.
+ * @throws When it is set but is not a whole number above zero.
+ */
+function envPositiveInteger(name: string, fallback: number): number {
+  const raw = process.env[name];
+  const value = envInteger(raw, fallback);
+  if (value <= 0) {
+    throw new Error(`${name} must be a whole number above zero, got "${raw}".`);
+  }
+  return value;
+}
+
+/**
  * The port to listen on.
  *
  * @returns `PORT`, or `HTTP_DEFAULTS.port`.
@@ -80,18 +97,21 @@ export function dbConnectTimeoutMs(): number {
  *
  * @returns `SUBSCRIPTION_DEFAULTS`, with `SUBSCRIPTION_MAX_STREAMS`, `SUBSCRIPTION_MAX_STREAMS_PER_UPSTREAM`,
  * `SUBSCRIPTION_IDLE_TIMEOUT_SECONDS` and `SUBSCRIPTION_MAX_EVENT_BYTES` over it where they are set.
+ * @throws When one of them is set but is not a whole number above zero. Preflight calls this, so boot stops.
  */
 export function subscriptionSettings(): SubscriptionSettings {
-  const env = process.env;
   return {
     ...SUBSCRIPTION_DEFAULTS,
-    maxStreams: envInteger(env.SUBSCRIPTION_MAX_STREAMS, SUBSCRIPTION_DEFAULTS.maxStreams),
-    maxStreamsPerUpstream: envInteger(
-      env.SUBSCRIPTION_MAX_STREAMS_PER_UPSTREAM,
+    maxStreams: envPositiveInteger('SUBSCRIPTION_MAX_STREAMS', SUBSCRIPTION_DEFAULTS.maxStreams),
+    maxStreamsPerUpstream: envPositiveInteger(
+      'SUBSCRIPTION_MAX_STREAMS_PER_UPSTREAM',
       SUBSCRIPTION_DEFAULTS.maxStreamsPerUpstream,
     ),
-    idleTimeoutSeconds: envInteger(env.SUBSCRIPTION_IDLE_TIMEOUT_SECONDS, SUBSCRIPTION_DEFAULTS.idleTimeoutSeconds),
-    maxEventBytes: envInteger(env.SUBSCRIPTION_MAX_EVENT_BYTES, SUBSCRIPTION_DEFAULTS.maxEventBytes),
+    idleTimeoutSeconds: envPositiveInteger(
+      'SUBSCRIPTION_IDLE_TIMEOUT_SECONDS',
+      SUBSCRIPTION_DEFAULTS.idleTimeoutSeconds,
+    ),
+    maxEventBytes: envPositiveInteger('SUBSCRIPTION_MAX_EVENT_BYTES', SUBSCRIPTION_DEFAULTS.maxEventBytes),
   };
 }
 
