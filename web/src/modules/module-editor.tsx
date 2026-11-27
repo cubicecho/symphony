@@ -1,6 +1,6 @@
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
-import { InputField, SelectField, TextareaField, useAppForm } from '@/components/app-form';
+import { ComboboxField, InputField, SelectField, TextareaField, useAppForm } from '@/components/app-form';
 import { CardLayout } from '@/components/card-layout';
 import { EmptyState } from '@/components/empty-state';
 import { PageLayout } from '@/components/page-layout';
@@ -36,8 +36,21 @@ interface ModuleEditorProps {
 interface ModuleDraft {
   name: string;
   description: string;
+  /** The default upstream: plain `gql` documents go to it. */
   upstreamId: string;
+  /** The other upstreams, in the order chosen: `gql.from('<name>')` documents go to them. */
+  otherUpstreamIds: string[];
   source: string;
+}
+
+/**
+ * Puts a module's upstreams in the order the server takes them.
+ *
+ * @param draft - The form's values.
+ * @returns The default first, then the others, without it.
+ */
+function upstreamIdsOf(draft: Pick<ModuleDraft, 'upstreamId' | 'otherUpstreamIds'>): string[] {
+  return [draft.upstreamId, ...draft.otherUpstreamIds.filter((id) => id !== draft.upstreamId)];
 }
 
 /**
@@ -55,7 +68,7 @@ function offsetOf(text: string, line: number, column: number): number {
 }
 
 /**
- * The module editor: name, description, upstream and source, Save & compile, the last save's errors, and a
+ * The module editor: name, description, upstreams and source, Save & compile, the last save's errors, and a
  * live preview of the last version that compiled.
  */
 export function ModuleEditor({ module }: ModuleEditorProps) {
@@ -75,7 +88,8 @@ export function ModuleEditor({ module }: ModuleEditorProps) {
   const defaultValues: ModuleDraft = {
     name: module?.name ?? '',
     description: module?.description ?? '',
-    upstreamId: module?.upstream.id ?? (upstreams.length === 1 ? (upstreams[0]?.id ?? '') : ''),
+    upstreamId: module?.upstreams[0]?.id ?? (upstreams.length === 1 ? (upstreams[0]?.id ?? '') : ''),
+    otherUpstreamIds: module?.upstreams.slice(1).map((upstream) => upstream.id) ?? [],
     source: module?.source ?? EXAMPLE_SOURCE,
   };
   const form = useAppForm({
@@ -87,7 +101,7 @@ export function ModuleEditor({ module }: ModuleEditorProps) {
           ...(isEdit ? { id: module.id } : {}),
           name: value.name.trim(),
           description: value.description.trim(),
-          upstreamId: value.upstreamId,
+          upstreamIds: upstreamIdsOf(value),
           source: value.source,
         });
         if (isEdit === false) {
@@ -128,7 +142,7 @@ export function ModuleEditor({ module }: ModuleEditorProps) {
   const editorCard = (
     <CardLayout
       title="Source"
-      description="One TSX file with a default export. Saving checks it against the upstream's schema and compiles it."
+      description="One TSX file with a default export. Saving checks each document against its upstream's schema and compiles it."
       wrapperSlot={(parts, { className }) => (
         <form.AppForm>
           <form className={className} onSubmit={onFormSubmit(() => form.handleSubmit())}>
@@ -155,13 +169,29 @@ export function ModuleEditor({ module }: ModuleEditorProps) {
           <SelectField
             form={form}
             name="upstreamId"
-            label="Upstream"
+            label="Default upstream"
+            description="Plain gql documents go here."
             required
             loading={upstreamsQuery.isPending}
             placeholder="Choose the API it reads"
             options={upstreams.map((upstream) => ({ value: upstream.id, label: upstream.name }))}
             validators={{ onChange: ({ value }) => (value === '' ? 'Choose the upstream it reads.' : undefined) }}
           />
+          <form.Subscribe selector={(state) => state.values.upstreamId}>
+            {(defaultId) => (
+              <ComboboxField
+                form={form}
+                name="otherUpstreamIds"
+                label="Other upstreams"
+                description="Optional. A document for one of these is written gql.from('<name>')`…`."
+                multiple
+                placeholder="None"
+                options={upstreams
+                  .filter((upstream) => upstream.id !== defaultId)
+                  .map((upstream) => ({ value: upstream.id, label: upstream.name }))}
+              />
+            )}
+          </form.Subscribe>
           <TextareaField
             form={form}
             name="source"
@@ -224,7 +254,11 @@ export function ModuleEditor({ module }: ModuleEditorProps) {
     <>
       <PageLayout
         title={module?.name ?? 'New module'}
-        description={module === undefined ? undefined : `Version ${module.version}, reading ${module.upstream.name}.`}
+        description={
+          module === undefined
+            ? undefined
+            : `Version ${module.version}, reading ${module.upstreams.map((upstream) => upstream.name).join(', ')}.`
+        }
         backSlot={
           <Button
             variant="ghost"
@@ -256,7 +290,7 @@ export function ModuleEditor({ module }: ModuleEditorProps) {
               <EmptyState
                 iconSlot={<Server />}
                 title="Add an upstream first"
-                description="A module reads one GraphQL API, so there has to be one to choose."
+                description="A module reads at least one GraphQL API, so there has to be one to choose."
                 actionSlot={<Button variant="info" linkSlot={<Link to="/upstreams" />} content="Go to Upstreams" />}
               />
             ) : null}

@@ -1,0 +1,36 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "83145cab-0bc6-43d2-8be2-8eb287c90e31",
+  "prevIds": [
+    "4b741372-7759-4146-af8b-f128efea2ba7"
+  ],
+  "footprints": [
+    {
+      "statementType": "drop_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "modules"
+      ],
+      "writes": [
+        "s|fk|public.modules.modules_upstream_id_upstreams_id_fkey",
+        "n|fk|public.modules.modules_upstream_id_upstreams_id_fkey",
+        "e|fk|public.modules.modules_upstream_id_upstreams_id_fkey",
+        "n|con|public.modules.modules_upstream_id_upstreams_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.modules",
+        "n|sch|public",
+        "e|col|public.modules.upstream_id"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "drop",
+      "key": "fks\u0000[\"public\",\"modules\",\"modules_upstream_id_upstreams_id_fkey\"]"
+    }
+  ]
+}

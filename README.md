@@ -4,8 +4,9 @@ One UI for the cubicecho apps: it talks to each headless server over GraphQL, an
 It builds runtime web UIs over GraphQL APIs that have none of their own.
 
 - **Upstreams.** Register a GraphQL API: its URL, plus headers kept on the server. Symphony introspects it and caches the schema.
-- **Modules.** A module is one React (TSX) file bound to one upstream. Agents write them over MCP, and people write them in the web editor.
-- **Checks.** Symphony checks every module (allowed imports, a default export, and GraphQL documents validated against the cached schema), then compiles it with esbuild. Errors come back with line and column, so an agent can fix them and submit again.
+- **Modules.** A module is one React (TSX) file over one or more upstreams, listed in order. Plain `gql` documents go to the first (the default), and `gql.from('<name>')` documents to another. Agents write them over MCP, and people write them in the web editor.
+- **Checks.** Symphony checks every module (allowed imports, a default export, and GraphQL documents each validated against its own upstream's cached schema), then compiles it with esbuild. Errors come back with line and column, so an agent can fix them and submit again.
+- **The unified upstream.** A built-in upstream named `unified` serves every upstream and concept composed into one API (the schema `/unified/graphql` serves). Modules can be written against it like any other; it can't be edited, refreshed or deleted, and its modules are checked again whenever a recompose changes its schema.
 - **Pages.** People place modules on pages. Modules render live data through Symphony's proxy, which checks each document before it forwards it. The browser never sees an upstream's address or its credentials.
 
 The rules a module follows, and the `symphony` runtime it imports, are in
@@ -42,9 +43,17 @@ Then ask for a module, for example "a module showing recent orders as a table".
 
 You then place the module on a page.
 
+**Concept proposals.** `propose_concepts` drafts concepts from the upstreams' cached schemas: object types in two
+or more upstreams whose names match once a prefix or suffix is removed, each with `id: ID!` and a Query lookup by
+id. Fields every member has with one scalar type are shared, the rest owned; `createX` / `updateX` / `deleteX`
+become member documents when their arguments map by name. Each draft comes with reasons, a confidence per
+decision, and the concept validator's problems. `submit_concept` stores a definition as a pending proposal (resubmit
+with the returned id until it passes), and a person accepts or rejects it over the admin API
+(`acceptConceptProposal`, `rejectConceptProposal`); accepting saves it as a concept.
+
 ## Trust model (Phase 1)
 
-- **Single operator, self-hosted.** The web UI and admin API at `/graphql` have no sign-in. Only `/mcp` takes a key. Run Symphony on a network you trust.
+- **Single operator, self-hosted.** The web UI, the admin API at `/graphql` and the unified API at `/unified/graphql` have no sign-in. Only `/mcp` takes a key. Run Symphony on a network you trust.
 - **Modules run in the page itself.** There is no iframe sandbox. The compiler only allows the imports listed in the contract, but module code can do anything page script can.
 - **Header secrets.** Header values may say `${env:SYMPHONY_…}`. The reference is stored, and the value is filled in only when a request goes out.
 
@@ -55,6 +64,9 @@ server/   Express + graphql-yoga + drizzle (PGlite in DATA_DIR, or Postgres via 
   upstreams/  introspection, schema cache, proxy, header secrets
   modules/    compile pipeline (babel parse → import allowlist → gql validation → esbuild) and storage
   pages/      pages and placed items
+  concepts/   concepts as data: validation, the generated concept subgraph and its engine
+  gateway/    the unified API: concept and wiring storage, field conflicts, composition, the hot-swapped gateway at
+              /unified/graphql (docs/spike-gateway.md, "Concepts")
   mcp/        the agents' door (MCP SDK, stateless Streamable HTTP)
   catalog/    cubeui component catalogue and docs (synced by `npm run catalog:sync`)
 web/      Vite + React + TanStack Router/Query + cubeui; web/src/modules is the module runtime and loader

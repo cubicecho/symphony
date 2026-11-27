@@ -1,7 +1,9 @@
 // Symphony's tables: the upstream APIs it wraps and their cached schemas, the modules written against
-// them, and the pages modules are placed on.
+// them, the pages modules are placed on, and the concepts and wiring the unified gateway is composed from.
 import { sql } from 'drizzle-orm';
-import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import type { ConceptProblem } from '../concepts/validate.ts';
+import type { WiringOverride } from '../gateway/wiring.ts';
 
 /** One header sent with every request to an upstream. The value may hold `${env:NAME}` references. */
 export interface StoredHeader {
@@ -41,16 +43,13 @@ export const upstreamSchemas = pgTable('upstream_schemas', {
   fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-/** A UI module: one TSX file bound to one upstream, and what its last compile made of it. */
+/** A UI module: one TSX file over one or more upstreams (`module_upstreams`), and what its last compile made of it. */
 export const modules = pgTable(
   'modules',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
     description: text('description').notNull().default(''),
-    upstreamId: uuid('upstream_id')
-      .notNull()
-      .references(() => upstreams.id, { onDelete: 'cascade' }),
     source: text('source').notNull(),
     /** The compiled browser code, or null while the source does not compile. */
     compiled: text('compiled'),
@@ -65,11 +64,56 @@ export const modules = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date()),
   },
+  (table) => [check('ck_modules_status', sql`${table.status} in ('READY', 'FAILED')`)],
+);
+
+/** The upstreams a module reads, in order: position 0 is the default, which a plain `gql` document goes to. */
+export const moduleUpstreams = pgTable(
+  'module_upstreams',
+  {
+    moduleId: uuid('module_id')
+      .notNull()
+      .references(() => modules.id, { onDelete: 'cascade' }),
+    /**
+     * The upstream's id. No foreign key: the built-in unified upstream has no row. Removing an upstream deletes the
+     * modules that list it in the same transaction (upstreams/upstream-service.ts).
+     */
+    upstreamId: uuid('upstream_id').notNull(),
+    position: integer('position').notNull(),
+  },
   (table) => [
-    index('ix_modules_upstream').on(table.upstreamId),
-    check('ck_modules_status', sql`${table.status} in ('READY', 'FAILED')`),
+    primaryKey({ columns: [table.moduleId, table.upstreamId] }),
+    index('ix_module_upstreams_upstream').on(table.upstreamId),
   ],
 );
+
+/**
+ * A concept: one entity read and written across its member upstreams. The definition is kept as submitted,
+ * so a concept an upstream's schema change has broken stays visible with its problems.
+ */
+export const concepts = pgTable('concepts', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  name: text('name').notNull().unique(),
+  definition: jsonb('definition').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
+
+/**
+ * A user's edit to one source's wiring, keyed by the source's name: an upstream's, or the concept subgraph's.
+ * It follows its upstream through a rename and goes when the upstream is removed (gateway/wiring-service.ts).
+ */
+export const wiringOverrides = pgTable('wiring_overrides', {
+  source: text('source').primaryKey(),
+  override: jsonb('override').$type<WiringOverride>().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow()
+    .$onUpdate(() => new Date()),
+});
 
 /** A page of modules. */
 export const pages = pgTable('pages', {
@@ -95,4 +139,39 @@ export const items = pgTable(
     fullWidth: boolean('full_width').notNull().default(false),
   },
   (table) => [index('ix_items_page').on(table.pageSlug), check('ck_items_column_span', sql`${table.columnSpan} >= 1`)],
+);
+
+/**
+ * A concept someone proposed, waiting for a person to accept it as a concept or reject it. The definition is kept
+ * as submitted, with the problems its last submit found (gateway/proposal-service.ts).
+ */
+export const conceptProposals = pgTable(
+  'concept_proposals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** The definition's name, or empty when it has none. */
+    name: text('name').notNull(),
+    definition: jsonb('definition').notNull(),
+    /** `pending` until a person accepts or rejects it. */
+    status: text('status').notNull().default('pending'),
+    problems: jsonb('problems').$type<ConceptProblem[]>().notNull().default(sql`'[]'::jsonb`),
+    /** Who drafted it: `generated` by the proposer, an `agent` over MCP, or a `user` in the web app. */
+    source: text('source').notNull(),
+    /** What the submitter said about it. */
+    note: text('note'),
+    /** Why a person rejected it. */
+    reason: text('reason'),
+    /** The concept accepting it saved. */
+    conceptId: uuid('concept_id').references(() => concepts.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index('ix_concept_proposals_status').on(table.status),
+    check('ck_concept_proposals_status', sql`${table.status} in ('pending', 'accepted', 'rejected')`),
+    check('ck_concept_proposals_source', sql`${table.source} in ('generated', 'agent', 'user')`),
+  ],
 );

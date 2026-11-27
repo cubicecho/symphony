@@ -2,15 +2,21 @@
 // compile that fails on a marker so errors can be followed through.
 import { buildSchema } from 'graphql';
 import { createComponentCatalog } from '../../server/catalog/catalog.ts';
-import { notFound } from '../../server/core/errors.ts';
+import { proposeConcepts } from '../../server/concepts/propose.ts';
+import { badInput, notFound } from '../../server/core/errors.ts';
 import {
   type ComponentCatalog,
+  type ConceptProposalRecord,
+  type ConceptRecord,
   type ModuleRecord,
   ModuleStatus,
   type PageService,
+  ProposalStatus,
   type Services,
+  UnifiedState,
   type Upstream,
 } from '../../server/core/services.ts';
+import { nameOf, readDefinition, schemasByName } from '../../server/gateway/concept-service.ts';
 import { type CompileResult, CompileStage } from '../../server/modules/compile-result.ts';
 import { FIXTURE_SDL, FIXTURE_URL } from '../fixtures/upstream.ts';
 
@@ -44,19 +50,25 @@ function fakeCompile(source: string): CompileResult {
 /** What the fakes record, for assertions. */
 export interface FakeCalls {
   executed: { id: string; query: string }[];
+  /** The upstreams each check_module call passed, in order. */
+  checked: string[][];
 }
 
 /**
  * Builds the fake services.
  *
  * @param [catalog] - The catalog; the real one over web/src/components when left out.
+ * @param [extraUpstreams] - Upstreams listed after the fake ones, for the proposal tools.
  * @returns The services and the calls they saw.
  */
-export function createFakeServices(catalog: ComponentCatalog = createComponentCatalog()): {
+export function createFakeServices(
+  catalog: ComponentCatalog = createComponentCatalog(),
+  extraUpstreams: readonly Upstream[] = [],
+): {
   services: Services;
   calls: FakeCalls;
 } {
-  const calls: FakeCalls = { executed: [] };
+  const calls: FakeCalls = { executed: [], checked: [] };
   const schema = buildSchema(FIXTURE_SDL);
   const upstreams: Upstream[] = [
     {
@@ -73,6 +85,7 @@ export function createFakeServices(catalog: ComponentCatalog = createComponentCa
       },
     },
     { id: 'u2', name: 'empty', url: 'http://empty.test/graphql', headers: [], schema: null },
+    ...extraUpstreams,
   ];
   const find = async (idOrName: string) =>
     upstreams.find((upstream) => upstream.id === idOrName || upstream.name === idOrName) ?? null;
@@ -90,6 +103,8 @@ export function createFakeServices(catalog: ComponentCatalog = createComponentCa
     moveItem: unused,
     removeItem: unused,
   };
+  const concepts = new Map<string, ConceptRecord>();
+  const proposals = new Map<string, ConceptProposalRecord>();
   const services: Services = {
     upstreams: {
       list: async () => upstreams,
@@ -107,11 +122,19 @@ export function createFakeServices(catalog: ComponentCatalog = createComponentCa
       list: async () => [...modules.values()],
       find: async (id) => modules.get(id) ?? null,
       remove: async (id) => modules.delete(id),
-      check: async (_upstream, source) => fakeCompile(source),
+      check: async (refs, source) => {
+        calls.checked.push(refs);
+        return fakeCompile(source);
+      },
+      recheck: async () => 0,
       save: async (input) => {
-        const upstream = await find(input.upstream);
-        if (upstream === null) {
-          throw notFound(`No upstream "${input.upstream}".`);
+        const upstreamIds: string[] = [];
+        for (const ref of input.upstreams) {
+          const upstream = await find(ref);
+          if (upstream === null) {
+            throw notFound(`No upstream "${ref}".`);
+          }
+          upstreamIds.push(upstream.id);
         }
         const previous = input.id === undefined ? undefined : modules.get(input.id);
         const isUnknownId = input.id !== undefined && previous === undefined;
@@ -123,7 +146,7 @@ export function createFakeServices(catalog: ComponentCatalog = createComponentCa
           id: previous?.id ?? `m${modules.size + 1}`,
           name: input.name,
           description: input.description ?? '',
-          upstreamId: upstream.id,
+          upstreamIds,
           source: input.source,
           compiled: compile.compiled,
           status: compile.ok ? ModuleStatus.Ready : ModuleStatus.Failed,
@@ -137,6 +160,92 @@ export function createFakeServices(catalog: ComponentCatalog = createComponentCa
     },
     pages,
     catalog,
+    concepts: {
+      list: async () => [...concepts.values()],
+      find: async (idOrName) =>
+        [...concepts.values()].find((concept) => concept.id === idOrName || concept.name === idOrName) ?? null,
+      save: async (definition) => {
+        const name =
+          typeof definition === 'object' && definition !== null && 'name' in definition ? definition.name : '';
+        if (typeof name !== 'string' || name === '') {
+          const problems = [
+            { concept: '', member: null, operation: null, message: 'name: Required', line: null, column: null },
+          ];
+          throw badInput('The concepts cannot be served.\n- name: Required', { problems });
+        }
+        const now = new Date();
+        const record: ConceptRecord = {
+          id: concepts.get(name)?.id ?? `c${concepts.size + 1}`,
+          name,
+          definition,
+          concept: null,
+          problems: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+        concepts.set(name, record);
+        return record;
+      },
+      remove: async (idOrName) => {
+        const found = [...concepts.values()].find((concept) => concept.id === idOrName || concept.name === idOrName);
+        return found === undefined ? false : concepts.delete(found.name);
+      },
+    },
+    conceptProposals: {
+      // The real proposer and checks over the fake upstreams; proposals are kept in a map.
+      propose: async (names) => {
+        const picked = upstreams.filter((upstream) => names === undefined || names.includes(upstream.name));
+        const found = proposeConcepts(schemasByName(picked));
+        const drafts = found.drafts.map((draft) => ({
+          ...draft,
+          problems: readDefinition(draft.definition, upstreams).problems,
+        }));
+        return { drafts, notReady: found.notReady };
+      },
+      list: async () => [...proposals.values()],
+      find: async (id) => proposals.get(id) ?? null,
+      submit: async (input) => {
+        const previous = input.id === undefined ? undefined : proposals.get(input.id);
+        const isUnknownId = input.id !== undefined && previous === undefined;
+        if (isUnknownId) {
+          throw notFound(`There is no concept proposal ${input.id}.`);
+        }
+        const now = new Date();
+        const record: ConceptProposalRecord = {
+          id: previous?.id ?? `p${proposals.size + 1}`,
+          name: nameOf(input.definition),
+          definition: input.definition,
+          status: ProposalStatus.Pending,
+          source: input.source,
+          problems: readDefinition(input.definition, upstreams).problems,
+          note: input.note ?? null,
+          reason: null,
+          conceptId: null,
+          createdAt: previous?.createdAt ?? now,
+          updatedAt: now,
+        };
+        proposals.set(record.id, record);
+        return record;
+      },
+      accept: unused,
+      reject: unused,
+    },
+    wiring: {
+      effective: async () => ({ wiring: [], problems: [], conflicts: [] }),
+      find: async () => null,
+      setOverride: unused,
+      clearOverride: async () => false,
+    },
+    unified: {
+      status: () => ({
+        state: UnifiedState.Starting,
+        composedAt: null,
+        sources: [],
+        problems: [],
+        warnings: [],
+        lastError: null,
+      }),
+    },
   };
   return { services, calls };
 }

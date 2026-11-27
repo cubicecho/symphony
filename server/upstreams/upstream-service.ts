@@ -2,7 +2,7 @@
 // Introspection and proxying share one sender, so headers, secrets, timeouts and size limits are applied
 // the same way to both.
 import { createHash } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import {
   buildClientSchema,
   GraphQLError,
@@ -15,16 +15,20 @@ import {
 import { UUID_PATTERN } from '../core/consts.ts';
 import { UPSTREAM_DEFAULTS, type UpstreamSettings } from '../core/defaults.ts';
 import { badInput, conflict, ErrorCode, errorMessage, notFound, upstreamFailed } from '../core/errors.ts';
-import type {
-  CachedSchema,
-  GraphQLRequest,
-  GraphQLResponseBody,
-  Upstream,
-  UpstreamInput,
-  UpstreamService,
+import type { EventFeed } from '../core/events.ts';
+import {
+  type CachedSchema,
+  type GraphQLRequest,
+  type GraphQLResponseBody,
+  type Upstream,
+  UpstreamChange,
+  type UpstreamEvent,
+  type UpstreamInput,
+  type UpstreamService,
 } from '../core/services.ts';
 import type { Database } from '../db/client.ts';
-import { upstreamSchemas, upstreams } from '../db/schema.ts';
+import { modules, moduleUpstreams, upstreamSchemas, upstreams } from '../db/schema.ts';
+import { CONCEPT_SOURCE_NAME } from '../gateway/wiring.ts';
 import { createSecretResolver } from './secrets.ts';
 
 /** A header name as HTTP allows it. */
@@ -45,6 +49,8 @@ export interface UpstreamServiceDeps {
   fetch?: typeof fetch;
   /** Where `${env:…}` references are read. Default: `process.env`. */
   env?: Readonly<Record<string, string | undefined>>;
+  /** Told after every add, update, remove and successful refresh, once the write is done. */
+  events?: EventFeed<UpstreamEvent>;
 }
 
 /** One row of `upstreams` joined with its schema row. */
@@ -64,6 +70,11 @@ function cleanInput(input: UpstreamInput): UpstreamInput {
   if (isNameValid === false) {
     throw badInput(
       `An upstream's name is 1–${MAX_NAME_CHARS} letters, digits, spaces, dots, dashes or underscores, starting with a letter or digit.`,
+    );
+  }
+  if (name === CONCEPT_SOURCE_NAME) {
+    throw badInput(
+      `"${CONCEPT_SOURCE_NAME}" is the unified gateway's name for the concept subgraph; pick another name.`,
     );
   }
   let url: URL;
@@ -135,8 +146,59 @@ async function readLimited(response: Response, maxBytes: number): Promise<string
  * @param code - The `extensions.code`.
  * @returns A body with one error and no data.
  */
-function errorBody(message: string, code: string): GraphQLResponseBody {
+export function errorBody(message: string, code: string): GraphQLResponseBody {
   return { errors: [{ message, extensions: { code } }] };
+}
+
+/**
+ * Checks one request against an upstream's cached schema before it is sent.
+ *
+ * @param name - The upstream's name, for the message.
+ * @param schema - Its cached schema; null when it was never fetched.
+ * @param request - The request.
+ * @returns A body with the problems, or null when the request may be sent.
+ */
+export function refusalOf(
+  name: string,
+  schema: CachedSchema | null,
+  request: GraphQLRequest,
+): GraphQLResponseBody | null {
+  if (schema === null) {
+    return errorBody(
+      `${name}'s schema has not been fetched, so the request can't be checked. Refresh its schema first.`,
+      ErrorCode.UpstreamFailed,
+    );
+  }
+  let document: ReturnType<typeof parse>;
+  try {
+    document = parse(request.query);
+  } catch (error) {
+    return errorBody(errorMessage(error), ErrorCode.BadUserInput);
+  }
+  const problems = validate(schema.schema, document);
+  if (problems.length === 0) {
+    return null;
+  }
+  return {
+    errors: problems.map((problem) => ({ ...problem.toJSON(), extensions: { code: ErrorCode.BadUserInput } })),
+  };
+}
+
+/** A schema as the cache keeps it, without when it was fetched. */
+export type DescribedSchema = Omit<CachedSchema, 'fetchedAt'>;
+
+/**
+ * Builds a schema from an introspection result and describes it the way the cache stores it.
+ *
+ * @param introspection - The `data` of an introspection query.
+ * @returns The schema, its SDL, the SDL's hash and its type count (`__` types left out).
+ * @throws When the introspection is not a usable schema.
+ */
+export function describeIntrospection(introspection: IntrospectionQuery): DescribedSchema {
+  const schema = buildClientSchema(introspection);
+  const sdl = printSchema(schema);
+  const typeCount = Object.keys(schema.getTypeMap()).filter((name) => name.startsWith('__') === false).length;
+  return { schema, sdl, hash: hashOf(sdl), typeCount };
 }
 
 /**
@@ -154,6 +216,17 @@ export function createUpstreamService(
   const { db } = deps;
   const send = deps.fetch ?? globalThis.fetch;
   const env = deps.env ?? process.env;
+  /**
+   * Tells the listeners about a change to one upstream.
+   *
+   * @param change - What happened.
+   * @param upstream - The upstream as it is now.
+   * @param [previousName] - Its name before the change, when an update renamed it.
+   */
+  const announce = async (change: UpstreamChange, upstream: Upstream, previousName = upstream.name) => {
+    await deps.events?.emit({ change, id: upstream.id, name: upstream.name, previousName });
+    return upstream;
+  };
   /** Schemas rebuilt from stored introspection, by upstream id and hash, so a request doesn't rebuild one. */
   const built = new Map<string, CachedSchema>();
 
@@ -298,26 +371,30 @@ export function createUpstreamService(
       if (row === undefined) {
         throw new Error('The upstream insert returned no row.');
       }
+      let added: Upstream;
       try {
-        return await refreshRow(row);
+        added = await refreshRow(row);
       } catch (error) {
         console.warn(`[upstreams] ${row.name}: first introspection failed: ${errorMessage(error)}`);
-        return toUpstream(row);
+        added = await toUpstream(row);
       }
+      return announce(UpstreamChange.Added, added);
     },
 
     update: async (id, input) => {
       const existing = await requireRow(id);
       const clean = cleanInput(input);
+      let updated: Upstream;
       try {
         const [row] = await db.update(upstreams).set(clean).where(eq(upstreams.id, existing.id)).returning();
-        return toUpstream(row ?? existing);
+        updated = await toUpstream(row ?? existing);
       } catch (error) {
         if (isUniqueViolation(error)) {
           throw conflict(`An upstream named "${clean.name}" already exists.`);
         }
         throw error;
       }
+      return announce(UpstreamChange.Updated, updated, existing.name);
     },
 
     remove: async (id) => {
@@ -325,33 +402,29 @@ export function createUpstreamService(
       if (row === undefined) {
         return false;
       }
-      await db.delete(upstreams).where(eq(upstreams.id, row.id));
+      // Modules list their upstreams without a foreign key (the built-in unified upstream has no row), so every module
+      // that lists this one, in any position, goes here.
+      await db.transaction(async (tx) => {
+        const listing = tx
+          .select({ moduleId: moduleUpstreams.moduleId })
+          .from(moduleUpstreams)
+          .where(eq(moduleUpstreams.upstreamId, row.id));
+        await tx.delete(modules).where(inArray(modules.id, listing));
+        await tx.delete(upstreams).where(eq(upstreams.id, row.id));
+      });
       built.delete(row.id);
+      await deps.events?.emit({ change: UpstreamChange.Removed, id: row.id, name: row.name, previousName: row.name });
       return true;
     },
 
-    refresh: async (id) => refreshRow(await requireRow(id)),
+    refresh: async (id) => announce(UpstreamChange.Refreshed, await refreshRow(await requireRow(id))),
 
     execute: async (id, request) => {
       const row = await requireRow(id);
       const upstream = await toUpstream(row);
-      if (upstream.schema === null) {
-        return errorBody(
-          `${row.name}'s schema has not been fetched, so the request can't be checked. Refresh its schema first.`,
-          ErrorCode.UpstreamFailed,
-        );
-      }
-      let document: ReturnType<typeof parse>;
-      try {
-        document = parse(request.query);
-      } catch (error) {
-        return errorBody(errorMessage(error), ErrorCode.BadUserInput);
-      }
-      const problems = validate(upstream.schema.schema, document);
-      if (problems.length > 0) {
-        return {
-          errors: problems.map((problem) => ({ ...problem.toJSON(), extensions: { code: ErrorCode.BadUserInput } })),
-        };
+      const refusal = refusalOf(row.name, upstream.schema, request);
+      if (refusal !== null) {
+        return refusal;
       }
       try {
         return await sendRequest(row, request, settings.proxyTimeoutMs);
@@ -378,16 +451,14 @@ export function createUpstreamService(
       throw upstreamFailed(`${row.name} refused introspection: ${messages}`);
     }
     const introspection = body.data as IntrospectionQuery;
-    let sdl: string;
-    let typeCount: number;
+    let described: DescribedSchema;
     try {
-      const schema = buildClientSchema(introspection);
-      sdl = printSchema(schema);
-      typeCount = Object.keys(schema.getTypeMap()).filter((name) => name.startsWith('__') === false).length;
+      described = describeIntrospection(introspection);
     } catch (error) {
       throw upstreamFailed(`${row.name}'s introspection is not a usable schema: ${errorMessage(error)}`);
     }
-    const values = { upstreamId: row.id, introspection, sdl, hash: hashOf(sdl), typeCount, fetchedAt: new Date() };
+    const { sdl, hash, typeCount } = described;
+    const values = { upstreamId: row.id, introspection, sdl, hash, typeCount, fetchedAt: new Date() };
     await db
       .insert(upstreamSchemas)
       .values(values)

@@ -1,16 +1,24 @@
 // The admin API's resolvers over the shared services. Agents reach the same services through /mcp.
-import type { GraphQLSchema } from 'graphql';
+import { GraphQLScalarType, type GraphQLSchema, valueFromASTUntyped } from 'graphql';
 import { createSchema } from 'graphql-yoga';
 import { LAYOUT_DEFAULTS, MODULE_DEFAULTS } from '../core/defaults.ts';
 import { notFound } from '../core/errors.ts';
 import {
+  type ConceptRecord,
   type ModuleRecord,
   ModuleStatus,
   type Page,
   type PageItem,
   type Services,
+  UnifiedProblemKind,
+  UnifiedState,
+  type UnifiedStatus,
   type Upstream,
 } from '../core/services.ts';
+import { conceptWarnings } from '../gateway/field-conflicts.ts';
+import { UNIFIED_ENDPOINT } from '../gateway/unified-service.ts';
+import type { EffectiveWiring, SourceWiring } from '../gateway/wiring.ts';
+import { PROPOSAL_TYPE_DEFS, withProposalResolvers } from './proposal-schema.ts';
 import { TYPE_DEFS } from './type-defs.ts';
 
 /** What every resolver reads. */
@@ -37,6 +45,34 @@ export function proxyPathOf(upstreamId: string): string {
   return `/proxy/${upstreamId}`;
 }
 
+/** Any JSON value, passed through as it is: concept definitions and wiring overrides. */
+const JsonScalar = new GraphQLScalarType({
+  name: 'JSON',
+  description: 'Any JSON value.',
+  serialize: (value) => value,
+  parseValue: (value) => value,
+  parseLiteral: (node, variables) => valueFromASTUntyped(node, variables),
+});
+
+/**
+ * Lists a rename map's entries, as the API shows them.
+ *
+ * @param renames - Source name to unified name.
+ * @returns One `{ from, to }` per rename.
+ */
+function renameList(renames: Readonly<Record<string, string>>): { from: string; to: string }[] {
+  return Object.entries(renames).map(([from, to]) => ({ from, to }));
+}
+
+/** The resolvers Wiring and SourceWiring share, since an effective wiring is a wiring too. */
+const WIRING_FIELDS = {
+  source: (wiring: SourceWiring) => wiring.upstream,
+  renames: (wiring: SourceWiring) => ({
+    types: renameList(wiring.renames.types),
+    fields: renameList(wiring.renames.fields),
+  }),
+};
+
 /**
  * Finds a module a page item or a query names.
  *
@@ -60,8 +96,8 @@ async function requireModule(ctx: Context, id: string): Promise<ModuleRecord> {
  */
 export function buildSchema(): GraphQLSchema {
   return createSchema<Context>({
-    typeDefs: TYPE_DEFS,
-    resolvers: {
+    typeDefs: [TYPE_DEFS, PROPOSAL_TYPE_DEFS],
+    resolvers: withProposalResolvers({
       Query: {
         upstreams: (_: unknown, _args: unknown, ctx: Context) => ctx.upstreams.list(),
         upstream: (_: unknown, args: { id: string }, ctx: Context) => ctx.upstreams.find(args.id),
@@ -75,6 +111,10 @@ export function buildSchema(): GraphQLSchema {
           newItemColumns: LAYOUT_DEFAULTS.newItemColumns,
           maxSourceChars: MODULE_DEFAULTS.maxSourceChars,
         }),
+        concepts: (_: unknown, _args: unknown, ctx: Context) => ctx.concepts.list(),
+        concept: (_: unknown, args: { idOrName: string }, ctx: Context) => ctx.concepts.find(args.idOrName),
+        sourceWiring: async (_: unknown, _args: unknown, ctx: Context) => (await ctx.wiring.effective()).wiring,
+        unifiedStatus: (_: unknown, _args: unknown, ctx: Context) => ctx.unified.status(),
       },
       Mutation: {
         addUpstream: (_: unknown, args: { input: Parameters<Context['upstreams']['add']>[0] }, ctx: Context) =>
@@ -96,16 +136,16 @@ export function buildSchema(): GraphQLSchema {
               id?: string | null;
               name: string;
               description?: string | null;
-              upstreamId: string;
+              upstreamIds: string[];
               source: string;
             };
           },
           ctx: Context,
         ) => {
-          const { id, description, upstreamId, ...rest } = args.input;
+          const { id, description, upstreamIds, ...rest } = args.input;
           const saved = await ctx.modules.save({
             ...rest,
-            upstream: upstreamId,
+            upstreams: upstreamIds,
             ...(id == null ? {} : { id }),
             ...(description == null ? {} : { description }),
           });
@@ -136,21 +176,58 @@ export function buildSchema(): GraphQLSchema {
         moveItem: (_: unknown, args: { id: string; offset: number }, ctx: Context) =>
           ctx.pages.moveItem(args.id, args.offset),
         removeItem: (_: unknown, args: { id: string }, ctx: Context) => ctx.pages.removeItem(args.id),
+        saveConcept: (_: unknown, args: { definition: unknown }, ctx: Context) => ctx.concepts.save(args.definition),
+        removeConcept: (_: unknown, args: { id: string }, ctx: Context) => ctx.concepts.remove(args.id),
+        setWiringOverride: (_: unknown, args: { source: string; override: unknown }, ctx: Context) =>
+          ctx.wiring.setOverride(args.source, args.override),
+        clearWiringOverride: (_: unknown, args: { source: string }, ctx: Context) =>
+          ctx.wiring.clearOverride(args.source),
+      },
+      JSON: JsonScalar,
+      Concept: {
+        servable: (concept: ConceptRecord) => concept.problems.length === 0,
+        warnings: (concept: ConceptRecord, _args: unknown, ctx: Context) => conceptWarnings(ctx.wiring, concept.name),
+        createdAt: (concept: ConceptRecord) => concept.createdAt.toISOString(),
+        updatedAt: (concept: ConceptRecord) => concept.updatedAt.toISOString(),
+      },
+      Wiring: WIRING_FIELDS,
+      SourceWiring: {
+        ...WIRING_FIELDS,
+        origins: (wiring: EffectiveWiring) =>
+          Object.entries(wiring.origins).map(([entry, origin]) => ({ entry, origin })),
+      },
+      WiringOrigin: { GENERATED: 'generated', OVERRIDE: 'override' },
+      UnifiedState: { STARTING: UnifiedState.Starting, READY: UnifiedState.Ready, FAILED: UnifiedState.Failed },
+      UnifiedProblemKind: {
+        CONCEPT: UnifiedProblemKind.Concept,
+        WIRING: UnifiedProblemKind.Wiring,
+        SOURCE: UnifiedProblemKind.Source,
+      },
+      UnifiedStatus: {
+        endpoint: () => UNIFIED_ENDPOINT,
+        composedAt: (status: UnifiedStatus) => status.composedAt?.toISOString() ?? null,
+      },
+      UnifiedError: {
+        at: (error: { at: Date }) => error.at.toISOString(),
       },
       Upstream: {
         proxyPath: (upstream: Upstream) => proxyPathOf(upstream.id),
+        builtIn: (upstream: Upstream) => upstream.builtIn === true,
       },
       UpstreamSchema: {
         fetchedAt: (schema: { fetchedAt: Date }) => schema.fetchedAt.toISOString(),
       },
       Module: {
-        upstream: async (module: ModuleRecord, _args: unknown, ctx: Context) => {
-          const upstream = await ctx.upstreams.find(module.upstreamId);
-          if (upstream === null) {
-            throw notFound(`Module ${module.name}'s upstream is gone.`);
-          }
-          return upstream;
-        },
+        upstreams: (module: ModuleRecord, _args: unknown, ctx: Context) =>
+          Promise.all(
+            module.upstreamIds.map(async (id) => {
+              const upstream = await ctx.upstreams.find(id);
+              if (upstream === null) {
+                throw notFound(`Module ${module.name}'s upstream ${id} is gone.`);
+              }
+              return upstream;
+            }),
+          ),
         codeUrl: codeUrlOf,
         updatedAt: (module: ModuleRecord) => module.updatedAt.toISOString(),
       },
@@ -160,6 +237,6 @@ export function buildSchema(): GraphQLSchema {
       Item: {
         module: (item: PageItem, _args: unknown, ctx: Context) => requireModule(ctx, item.moduleId),
       },
-    },
+    }),
   });
 }

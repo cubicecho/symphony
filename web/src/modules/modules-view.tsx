@@ -9,9 +9,19 @@ import { Plus } from '@/components/ui/icons';
 import { Blocks } from '@/core/app-icons';
 import { McpNote } from './mcp-note.tsx';
 import { ModuleStatusBadge } from './module-status-badge.tsx';
-import { useModules } from './use-modules.ts';
+import { type ModuleSummary, useModules } from './use-modules.ts';
 
-/** The modules screen: every module, its upstream, whether it compiles, and its version. */
+/**
+ * Names a module's upstreams for its row.
+ *
+ * @param module - The module.
+ * @returns `orders, unified`, the default first.
+ */
+function upstreamNames(module: ModuleSummary): string {
+  return module.upstreams.map((upstream) => upstream.name).join(', ');
+}
+
+/** The modules screen: every module, its upstreams, whether it compiles, and its version. */
 export function ModulesView() {
   const query = useModules();
   const modules = query.data ?? [];
@@ -22,7 +32,7 @@ export function ModulesView() {
   return (
     <PageLayout
       title="Modules"
-      description="React components over one upstream each. Place the ones that compile on a page."
+      description="React components over one or more upstreams each. Place the ones that compile on a page."
       actionSlot={newButton}
       contentSlot={
         <>
@@ -47,9 +57,7 @@ export function ModulesView() {
                 <ListItem
                   key={module.id}
                   title={module.name}
-                  description={
-                    module.description === '' ? module.upstream.name : `${module.upstream.name} · ${module.description}`
-                  }
+                  description={[upstreamNames(module), module.description].filter((part) => part !== '').join(' · ')}
                   meta={
                     <span className="flex items-center gap-2">
                       <ModuleStatusBadge status={module.status} />

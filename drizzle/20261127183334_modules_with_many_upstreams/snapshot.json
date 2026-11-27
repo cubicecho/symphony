@@ -1,0 +1,237 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "fe1a12ec-58b5-40a1-96be-d3e1adeaada1",
+  "prevIds": [
+    "83145cab-0bc6-43d2-8be2-8eb287c90e31"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "module_upstreams"
+      ],
+      "writes": [
+        "s|tbl|public.module_upstreams",
+        "n|tbl|public.module_upstreams",
+        "e|tbl|public.module_upstreams",
+        "n|rel|public.module_upstreams",
+        "n|type|public.module_upstreams",
+        "n|rel|public.module_upstreams_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "drop_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "modules",
+        "ix_modules_upstream"
+      ],
+      "writes": [
+        "s|idx|public.ix_modules_upstream",
+        "n|idx|public.ix_modules_upstream",
+        "e|idx|public.ix_modules_upstream",
+        "n|rel|public.ix_modules_upstream"
+      ],
+      "reads": [
+        "e|tbl|public.modules",
+        "n|sch|public",
+        "e|col|public.modules.upstream_id"
+      ],
+      "sharedWrites": []
+    },
+    {
+      "statementType": "drop_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "modules",
+        "upstream_id"
+      ],
+      "writes": [
+        "s|col|public.modules.upstream_id",
+        "n|col|public.modules.upstream_id",
+        "e|col|public.modules.upstream_id"
+      ],
+      "reads": [
+        "n|tbl|public.modules",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "module_upstreams",
+        "ix_module_upstreams_upstream"
+      ],
+      "writes": [
+        "s|idx|public.ix_module_upstreams_upstream",
+        "n|idx|public.ix_module_upstreams_upstream",
+        "e|idx|public.ix_module_upstreams_upstream",
+        "n|rel|public.ix_module_upstreams_upstream"
+      ],
+      "reads": [
+        "n|tbl|public.module_upstreams",
+        "n|sch|public",
+        "n|col|public.module_upstreams.upstream_id"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "module_upstreams"
+      ],
+      "writes": [
+        "s|fk|public.module_upstreams.module_upstreams_module_id_modules_id_fkey",
+        "n|fk|public.module_upstreams.module_upstreams_module_id_modules_id_fkey",
+        "e|fk|public.module_upstreams.module_upstreams_module_id_modules_id_fkey",
+        "n|con|public.module_upstreams.module_upstreams_module_id_modules_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.module_upstreams",
+        "n|sch|public",
+        "n|tbl|public.modules",
+        "n|sch|public",
+        "n|col|public.module_upstreams.module_id",
+        "n|col|public.modules.id",
+        "e|uniqueness|public.modules.id"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "module_upstreams",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "module_upstreams",
+        "name": "module_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "module_upstreams",
+        "name": "upstream_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "module_upstreams",
+        "name": "position",
+        "type": "integer",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "module_upstreams",
+        "name": "ix_module_upstreams_upstream",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "upstream_id",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "module_upstreams",
+        "name": "module_upstreams_module_id_modules_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "module_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "modules",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "CASCADE",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "module_upstreams",
+        "name": "module_upstreams_pkey",
+        "columns": [
+          "module_id",
+          "upstream_id"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "drop",
+      "key": "columns\u0000[\"public\",\"modules\",\"upstream_id\"]"
+    },
+    {
+      "op": "drop",
+      "key": "indexes\u0000[\"public\",\"ix_modules_upstream\"]"
+    }
+  ]
+}

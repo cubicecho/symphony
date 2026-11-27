@@ -101,12 +101,15 @@ export interface ModuleSettings {
   maxDocuments: number;
   /** Longest module name, in characters. */
   maxNameChars: number;
+  /** Most upstreams one module may read. */
+  maxUpstreams: number;
 }
 
 export const MODULE_DEFAULTS: Readonly<ModuleSettings> = Object.freeze({
   maxSourceChars: 200_000,
   maxDocuments: 20,
   maxNameChars: 80,
+  maxUpstreams: 8,
 });
 
 /** How a page lays out its modules. */
@@ -136,4 +139,27 @@ export interface McpSettings {
 export const MCP_DEFAULTS: Readonly<McpSettings> = Object.freeze({
   maxAnswerChars: 60_000,
   maxSearchResults: 40,
+});
+
+/** How the unified gateway composes its supergraph and swaps one for the next. */
+export interface GatewaySettings {
+  /** How long operations in flight at a swap get to finish on the old supergraph, in milliseconds. */
+  swapDrainMs: number;
+  /** How long a change waits for more before the supergraph is recomposed, so a burst composes once, in milliseconds. */
+  recomposeDebounceMs: number;
+}
+
+export const GATEWAY_DEFAULTS: Readonly<GatewaySettings> = Object.freeze({
+  swapDrainMs: 10_000,
+  recomposeDebounceMs: 250,
+});
+
+/** How Symphony drafts concepts from the upstreams' cached schemas (concepts/propose.ts). */
+export interface ProposalSettings {
+  /** Shortest name, in characters, two type names may share once a prefix or suffix is removed, to count as one entity. */
+  minSharedNameChars: number;
+}
+
+export const PROPOSAL_DEFAULTS: Readonly<ProposalSettings> = Object.freeze({
+  minSharedNameChars: 3,
 });

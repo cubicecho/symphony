@@ -1,0 +1,1 @@
+ALTER TABLE "modules" DROP CONSTRAINT "modules_upstream_id_upstreams_id_fkey";

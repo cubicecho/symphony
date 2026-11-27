@@ -6,9 +6,22 @@ import { createComponentCatalog } from '../catalog/catalog.ts';
 import { isProduction, trustProxy, version } from '../core/config.ts';
 import { HTTP_DEFAULTS } from '../core/defaults.ts';
 import { errorMessage } from '../core/errors.ts';
-import type { GraphQLRequest, Services } from '../core/services.ts';
+import { createEventFeed } from '../core/events.ts';
+import {
+  type CachedSchema,
+  type GraphQLRequest,
+  type Services,
+  type SourcesChange,
+  UpstreamChange,
+  type UpstreamEvent,
+} from '../core/services.ts';
 import { HttpStatus } from '../core/wire.ts';
 import type { Database } from '../db/client.ts';
+import { createConceptService } from '../gateway/concept-service.ts';
+import { createProposalService } from '../gateway/proposal-service.ts';
+import { createUnifiedService, UNIFIED_ENDPOINT, type UnifiedGatewayService } from '../gateway/unified-service.ts';
+import { UNIFIED_UPSTREAM_ID, withUnifiedUpstream } from '../gateway/unified-upstream.ts';
+import { createWiringService } from '../gateway/wiring-service.ts';
 import { graphqlLogger } from '../graphql/logger.ts';
 import { useOperationLimits } from '../graphql/operation-limits.ts';
 import { buildSchema, type Context } from '../graphql/schema.ts';
@@ -21,14 +34,17 @@ import { healthHandler } from './health.ts';
 const GRAPHQL_ENDPOINT = '/graphql';
 const MCP_ENDPOINT = '/mcp';
 /** Every path but the server's own, so the web app's routes load index.html. */
-const WEB_ROUTES = /^(?!\/(graphql|healthz|mcp)$)(?!\/proxy\/|\/modules\/[^/]+\/[^/]+\.js$).*/;
+const WEB_ROUTES = /^(?!\/(graphql|healthz|mcp|unified\/graphql)$)(?!\/proxy\/|\/modules\/[^/]+\/[^/]+\.js$).*/;
 /** Where `npm run build` puts the web app. */
 export const WEB_DIST = fileURLToPath(new URL('../../dist', import.meta.url));
 /** Compiled module code never changes under one URL, since the version is in it. */
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 
-/** What the app is built from. Services left out are built over `db`. */
-export interface AppDeps extends Partial<Services> {
+/**
+ * What the app is built from. Services left out are built over `db`; the unified gateway always is. A given
+ * `upstreams` is the stored upstreams only: the app adds the built-in `unified` one to what it hands out.
+ */
+export interface AppDeps extends Partial<Omit<Services, 'unified'>> {
   db: Database;
   /** The key MCP clients send. Empty shuts /mcp. */
   mcpKey: string;
@@ -38,6 +54,15 @@ export interface AppDeps extends Partial<Services> {
   fetch?: typeof fetch;
   /** The built web app's directory. Left out in tests. */
   dist?: string;
+}
+
+/** What createApp builds. */
+export interface BuiltApp {
+  /** The Express app, not listening. */
+  app: Express;
+  services: Services;
+  /** Not composing until `start`; boot starts it after listen and disposes it on shutdown. */
+  unified: UnifiedGatewayService;
 }
 
 /**
@@ -57,19 +82,55 @@ function graphqlRequestOf(body: unknown): GraphQLRequest | null {
 }
 
 /**
- * Builds the Express app: /graphql for the web app, /mcp for agents, /proxy to the upstreams, the compiled
- * module code, /healthz, and the built web app when there is one. It does not listen.
+ * Builds the Express app: /graphql for the web app, /mcp for agents, /unified/graphql for the unified API, /proxy
+ * to the upstreams, the compiled module code, /healthz, and the built web app when there is one. It does not listen.
  *
  * @param deps - The database, the MCP key, and any services a test replaces.
- * @returns The app and the services it was built with.
+ * @returns The app, the services it was built with, and the unified gateway.
  */
-export function createApp({ db, mcpKey, checkDatabase, dist, ...deps }: AppDeps): { app: Express; services: Services } {
-  const upstreams = deps.upstreams ?? createUpstreamService({ db, ...(deps.fetch ? { fetch: deps.fetch } : {}) });
+export function createApp({ db, mcpKey, checkDatabase, dist, ...deps }: AppDeps): BuiltApp {
+  const fetchDeps = deps.fetch ? { fetch: deps.fetch } : {};
+  // Upstream changes are followed in subscription order: concepts follow renames and wiring moves overrides first,
+  // then the gateway recomposes.
+  const upstreamEvents = createEventFeed<UpstreamEvent>('[upstreams]');
+  const changes = createEventFeed<SourcesChange>('[gateway]');
+  const servedSchemas = createEventFeed<CachedSchema>('[gateway]');
+  // The gateway composes from the stored upstreams; everything else sees them with the built-in `unified` one.
+  const stored = deps.upstreams ?? createUpstreamService({ db, events: upstreamEvents, ...fetchDeps });
+  const concepts = deps.concepts ?? createConceptService({ db, upstreams: stored, changes, upstreamEvents });
+  const wiring = deps.wiring ?? createWiringService({ db, concepts, upstreams: stored, changes, upstreamEvents });
+  const unified = createUnifiedService({
+    upstreams: stored,
+    concepts,
+    wiring,
+    changes,
+    upstreamEvents,
+    servedSchemas,
+    ...fetchDeps,
+  });
+  const upstreams = withUnifiedUpstream(stored, unified);
+  const modules = deps.modules ?? createModuleService({ db, upstreams });
+  // A schema that changed under its modules re-checks them, so a page shows a module that broke as failing. So does a
+  // rename, since `gql.from('<name>')` names an upstream by its name.
+  upstreamEvents.subscribe(async (event) => {
+    const isRenamed = event.change === UpstreamChange.Updated && event.name !== event.previousName;
+    if (event.change === UpstreamChange.Refreshed || isRenamed) {
+      await modules.recheck(event.id);
+    }
+  });
+  servedSchemas.subscribe(async () => {
+    await modules.recheck(UNIFIED_UPSTREAM_ID);
+  });
   const services: Services = {
     upstreams,
-    modules: deps.modules ?? createModuleService({ db, upstreams }),
+    modules,
     pages: deps.pages ?? createPageService({ db }),
     catalog: deps.catalog ?? createComponentCatalog(),
+    concepts,
+    // Drafts come from the stored upstreams only: the built-in one already serves the concepts.
+    conceptProposals: deps.conceptProposals ?? createProposalService({ db, upstreams: stored, concepts }),
+    wiring,
+    unified,
   };
 
   const yoga = createYoga<object, Context>({
@@ -89,6 +150,9 @@ export function createApp({ db, mcpKey, checkDatabase, dist, ...deps }: AppDeps)
   app.get('/healthz', healthHandler(checkDatabase));
   app.use(GRAPHQL_ENDPOINT, json);
   app.all(GRAPHQL_ENDPOINT, (req, res) => yoga(req, res));
+  // Open like /graphql: both are the operator's, on the network Symphony listens on.
+  app.use(UNIFIED_ENDPOINT, json);
+  app.all(UNIFIED_ENDPOINT, unified.handler);
   app.all(MCP_ENDPOINT, json, createMcpHandler(services, { key: mcpKey, version: version() }));
 
   // The browser's door to an upstream. Every document is checked against the cached schema first.
@@ -123,5 +187,5 @@ export function createApp({ db, mcpKey, checkDatabase, dist, ...deps }: AppDeps)
     app.use(express.static(dist));
     app.get(WEB_ROUTES, (_req, res) => res.sendFile('index.html', { root: dist }));
   }
-  return { app, services };
+  return { app, services, unified };
 }

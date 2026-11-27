@@ -21,7 +21,7 @@ await opened.migrate();
 console.log(`[db] ${opened.isPostgres ? 'Postgres' : 'PGlite'} at ${opened.location}`);
 
 const key = mcpKey();
-const { app } = createApp({
+const { app, unified } = createApp({
   db: opened.db,
   mcpKey: key,
   checkDatabase: () => opened.db.execute(sql`select 1`),
@@ -33,4 +33,11 @@ const server = app.listen(port(), host(), () => {
     console.warn('[mcp] SYMPHONY_MCP_KEY is not set, so /mcp refuses every call. Set it in .env to let agents in.');
   }
 });
-stopOnSignals(server, { after: () => opened.close() });
+// The first composition runs in the background; /unified/graphql answers 503 until it succeeds.
+unified.start();
+stopOnSignals(server, {
+  after: async () => {
+    await unified.dispose();
+    await opened.close();
+  },
+});
