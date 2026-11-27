@@ -88,7 +88,7 @@ export function useUnifiedStatus() {
  *
  * @param client - The query client.
  */
-function invalidateUnified(client: QueryClient): void {
+export function invalidateUnified(client: QueryClient): void {
   void client.invalidateQueries({ queryKey: UNIFIED_KEY });
 }
 
