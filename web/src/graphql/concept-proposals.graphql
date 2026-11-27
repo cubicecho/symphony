@@ -1,0 +1,79 @@
+fragment ConceptDraftFields on ConceptDraft {
+  name
+  definition
+  servable
+  problems {
+    ...ConceptProblemFields
+  }
+  reasons {
+    about
+    reason
+    confidence
+  }
+}
+
+fragment ConceptProposalFields on ConceptProposal {
+  id
+  name
+  definition
+  status
+  source
+  servable
+  problems {
+    ...ConceptProblemFields
+  }
+  note
+  reason
+  concept {
+    id
+    name
+  }
+  createdAt
+  updatedAt
+}
+
+query ProposeConcepts($upstreams: [String!]) {
+  proposeConcepts(upstreams: $upstreams) {
+    drafts {
+      ...ConceptDraftFields
+    }
+    notReady {
+      name
+      types {
+        upstream
+        type
+        reason
+      }
+    }
+  }
+}
+
+query ConceptProposals($status: ConceptProposalStatus) {
+  conceptProposals(status: $status) {
+    ...ConceptProposalFields
+  }
+}
+
+query ConceptProposal($id: ID!) {
+  conceptProposal(id: $id) {
+    ...ConceptProposalFields
+  }
+}
+
+mutation SubmitConceptProposal($definition: JSON!, $id: ID, $note: String, $source: ConceptProposalSource) {
+  submitConceptProposal(definition: $definition, id: $id, note: $note, source: $source) {
+    ...ConceptProposalFields
+  }
+}
+
+mutation AcceptConceptProposal($id: ID!) {
+  acceptConceptProposal(id: $id) {
+    ...ConceptProposalFields
+  }
+}
+
+mutation RejectConceptProposal($id: ID!, $reason: String) {
+  rejectConceptProposal(id: $id, reason: $reason) {
+    ...ConceptProposalFields
+  }
+}

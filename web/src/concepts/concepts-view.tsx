@@ -6,12 +6,13 @@ import { ListItem } from '@/components/list-item';
 import { LoadState } from '@/components/load-state';
 import { PageLayout } from '@/components/page-layout';
 import { Button } from '@/components/ui/button';
-import { GitBranch, Layers, Plus, Trash2 } from '@/components/ui/icons';
+import { GitBranch, Layers, Plus, Sparkles, Trash2 } from '@/components/ui/icons';
 import { countLabel } from '@/core/format';
 import { ProblemAlert } from '@/core/problem-alert';
 import { messageOf } from '@/lib/error-message';
 import { ConceptServableBadge } from './concept-servable-badge.tsx';
 import { summarizeDefinition } from './concept-summary.ts';
+import { ProposalsSection } from './proposals-section.tsx';
 import { RemoveConceptDialog } from './remove-concept-dialog.tsx';
 import { UnifiedStatusCard } from './unified-status-card.tsx';
 import { type Concept, useConcepts, useRemoveConcept } from './use-concepts.ts';
@@ -37,6 +38,13 @@ export function ConceptsView() {
             iconSlot={<GitBranch />}
             content="Wiring"
             linkSlot={<Link to="/wiring" />}
+          />
+          <Button
+            size="sm"
+            variant="outline"
+            iconSlot={<Sparkles />}
+            content="Propose concepts"
+            linkSlot={<Link to="/concepts/propose" />}
           />
           {newButton}
         </>
@@ -66,6 +74,7 @@ export function ConceptsView() {
               ))}
             />
           )}
+          <ProposalsSection />
         </>
       }
     />
