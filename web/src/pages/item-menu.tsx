@@ -1,4 +1,4 @@
-import { Link, useSearch } from '@tanstack/react-router';
+import { useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -6,8 +6,8 @@ import { Ellipsis, Trash2 } from '@/components/ui/icons';
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@/components/ui/menu';
 import { ArrowDown, ArrowUp, Columns3, Maximize2 } from '@/core/app-icons';
 import { messageOf } from '@/lib/error-message';
-import { itemPathOf, splatOf } from '@/modules/module-url';
 import { widthLabel } from './column-span.ts';
+import { fullPageLinkOf } from './full-page-link.tsx';
 import { ItemWidthDialog } from './item-width-dialog.tsx';
 import { type Item, type Page, useMoveItem, useRemoveItem } from './use-pages.ts';
 
@@ -61,12 +61,7 @@ export function ItemMenu({ page, item, index, onProblem }: ItemMenuProps) {
           <MenuItem
             iconSlot={<Maximize2 />}
             label="Open full page"
-            linkSlot={
-              <Link
-                to="/pages/$slug/items/$itemId/$"
-                params={{ slug: page.slug, itemId: item.id, _splat: splatOf(itemPathOf(search, item.id)) }}
-              />
-            }
+            linkSlot={fullPageLinkOf(page.slug, item.id, search)}
           />
           <MenuSeparator />
           <MenuItem

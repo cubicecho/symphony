@@ -77,6 +77,16 @@ describe('module URLs', () => {
     expect(splatOf('orders/o3')).toBe('orders/o3');
   });
 
+  it('keeps the other items paths through a visit to one item full page', () => {
+    const page = { 'm.a': '/orders/o3', 'm.b': '/tabs/2', tab: 'x' };
+    // Open a full page: its own path moves to the splat, the rest of the search goes along.
+    const fullPage = withItemPath(page, 'a', '/');
+    expect(splatOf(itemPathOf(page, 'a'))).toBe('orders/o3');
+    expect(fullPage).toEqual({ 'm.b': '/tabs/2', tab: 'x' });
+    // Back again, after moving to another subpage there.
+    expect(withItemPath(fullPage, 'a', '/orders/o4')).toEqual({ 'm.a': '/orders/o4', 'm.b': '/tabs/2', tab: 'x' });
+  });
+
   it('starts an editor preview at the path in the hash a preview link opened', () => {
     expect(previewStartOf('/orders/o3')).toBe('/orders/o3');
     expect(previewStartOf('')).toBe('/');
