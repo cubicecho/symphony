@@ -75,7 +75,86 @@ export default function RecentOrders() {
 | `useQuery`    | `useQuery<T>(document, { variables?, refetchIntervalSeconds?, enabled? }?)` → `{ data: T \| undefined, error: Error \| null, isLoading, isPending, isError: boolean, refetch() }` | Runs a query against the document's upstream. Cached per document and variables. The result can be passed straight to `LoadState`'s `query`, which draws loading and failure and renders nothing once data is there. |
 | `useMutation` | `useMutation<T, V>(document)` → `{ mutate(variables?: V): Promise<T>, data: T \| undefined, error: Error \| null, isPending: boolean }`                                           | Runs a mutation against the document's upstream. When it succeeds, every query of this module is fetched again.                                                                                                      |
 
+| `useSubscription` | `useSubscription<T>(document, { variables?, enabled?, maxEvents?, onEvent? }?)` → `{ events: T[], latest: T \| undefined, status, error: Error \| null }` | Follows a subscription on the document's upstream. `events` holds the `data` of the latest `maxEvents` (default 100) events, oldest first; `onEvent(data)` is called as each arrives. `status` is `'idle'` (not enabled), `'connecting'`, `'open'`, `'complete'` or `'error'`. |
+
 An upstream's GraphQL errors arrive as `error`, with the upstream's messages joined.
+
+## Following something live
+
+A `subscription` document goes through `useSubscription`, never `useQuery`. The stream opens when the module
+mounts, closes when it unmounts or its variables change, and completes when the upstream completes it.
+
+```tsx
+import { gql, useQuery, useSubscription } from 'symphony';
+
+const RUNS = gql`
+  query Runs {
+    runs {
+      id
+      status
+    }
+  }
+`;
+
+const EVENTS = gql`
+  subscription RunEvents($runId: String!) {
+    runEvents(runId: $runId) {
+      seq
+      kind
+      text
+    }
+  }
+`;
+
+interface RunEvent {
+  seq: number;
+  kind: string;
+  text: string;
+}
+
+function RunLog({ runId }: { runId: string | null }) {
+  const runs = useQuery(RUNS);
+  const { events, status, error } = useSubscription<{ runEvents: RunEvent }>(EVENTS, {
+    variables: { runId },
+    enabled: runId !== null,
+    // Fetch the run list again once the run says it is done.
+    onEvent: (data) => {
+      if (data.runEvents.kind === 'end') {
+        runs.refetch();
+      }
+    },
+  });
+  // …render events.map((event) => event.runEvents.text), and status
+}
+```
+
+- **Reconnects.** A dropped stream reconnects with backoff (1 s, doubling up to 30 s) and `status` goes back to
+  `'connecting'` with the reason in `error`. One the upstream completed (`'complete'`) or Symphony refused
+  (`'error'`, for an invalid document, say) is not tried again.
+- **Events are kept across a reconnect.** An upstream that replays what it said so far (like `runEvents`) sends
+  those events again after one, so key what you render by a field such as `seq`.
+- **An event's GraphQL errors** arrive as `error` without closing the stream.
+- **Limits.** Symphony closes a stream that has had no event for a while (5 minutes by default; the module then
+  reconnects), refuses one over its stream limits, and ends one whose event is too large.
+- **Not through `unified`.** The built-in unified API doesn't stream subscriptions yet: tag the document
+  `gql.from('<upstream>')` for the upstream that serves the field.
+- **Agents can't subscribe.** `run_query` refuses subscription documents. To see the same data, run the upstream's
+  snapshot query, one that returns what happened so far (Task Server's `run_events(runId, afterSeq)`).
+
+### Long-running mutations: start, then subscribe
+
+A query or mutation through the proxy has 30 seconds to answer. A mutation that only answers when a long job
+ends (a run, an import) outlasts that. Start the job with a mutation that returns at once, with the job's id,
+then follow it with its subscription:
+
+```tsx
+const START = gql`mutation Start($task: String!) { startRun(task: $task) { id } }`;
+
+const start = useMutation<{ startRun: { id: string } }>(START);
+const [runId, setRunId] = useState<string | null>(null);
+const { latest } = useSubscription<{ runEvents: RunEvent }>(EVENTS, { variables: { runId }, enabled: runId !== null });
+// onClick: setRunId((await start.mutate({ task })).startRun.id)
+```
 
 ## More than one upstream
 
