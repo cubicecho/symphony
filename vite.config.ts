@@ -33,6 +33,7 @@ export default defineConfig({
       '^/proxy/': API_ORIGIN,
       '^/modules/[^/]+/[^/]+\\.js$': API_ORIGIN,
       '^/mcp(\\?|/|$)': API_ORIGIN,
+      '^/unified/': API_ORIGIN,
       '/healthz': API_ORIGIN,
     },
   },

@@ -6,7 +6,7 @@ import { LoadState } from '@/components/load-state';
 import { AppBarItem, Sidebar, SidebarItem, SidebarSection } from '@/components/sidebar';
 import { SidebarLayout } from '@/components/split-layout';
 import { Button } from '@/components/ui/button';
-import { Ellipsis, Plus, Server } from '@/components/ui/icons';
+import { Ellipsis, GitBranch, Layers, Plus, Server } from '@/components/ui/icons';
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@/components/ui/menu';
 import { ThemePicker } from '@/components/ui/theme-picker';
 import { useThemePreference } from '@/components/ui/theme-preference';
@@ -18,6 +18,8 @@ const SidebarLink = createLink(SidebarItem);
 const BarLink = createLink(AppBarItem);
 const MODULES_PATH = '/modules';
 const UPSTREAMS_PATH = '/upstreams';
+const CONCEPTS_PATH = '/concepts';
+const WIRING_PATH = '/wiring';
 const NEW_PAGE_LABEL = 'Add page';
 
 export const Route = createRootRoute({
@@ -94,7 +96,7 @@ function BarMoreMenu({ pages, onNewPage }: { pages: readonly Page[]; onNewPage: 
 }
 
 /**
- * The app shell: the pages, then Modules and Upstreams, in the sidebar beside whichever screen the route
+ * The app shell: the pages, then Modules, Upstreams, Concepts and Wiring, in the sidebar beside whichever screen the route
  * draws; on a phone, a bar across the top instead.
  *
  * @remarks
@@ -110,6 +112,8 @@ function Shell() {
   const [createSession, setCreateSession] = useState<number | null>(null);
   const isModules = pathname.startsWith(MODULES_PATH);
   const isUpstreams = pathname.startsWith(UPSTREAMS_PATH);
+  const isConcepts = pathname.startsWith(CONCEPTS_PATH);
+  const isWiring = pathname.startsWith(WIRING_PATH);
 
   /**
    * Whether a page's row is the one showing.
@@ -138,6 +142,8 @@ function Shell() {
             <BarLink to="/" label="Home" iconSlot={<House />} active={pathname === '/'} />
             <BarLink to={MODULES_PATH} label="Modules" iconSlot={<Blocks />} active={isModules} />
             <BarLink to={UPSTREAMS_PATH} label="Upstreams" iconSlot={<Server />} active={isUpstreams} />
+            <BarLink to={CONCEPTS_PATH} label="Concepts" iconSlot={<Layers />} active={isConcepts} />
+            <BarLink to={WIRING_PATH} label="Wiring" iconSlot={<GitBranch />} active={isWiring} />
           </>
         }
         actionSlot={<BarMoreMenu pages={pages} onNewPage={startCreating} />}
@@ -188,6 +194,8 @@ function Shell() {
                     <>
                       <SidebarLink to={MODULES_PATH} label="Modules" iconSlot={<Blocks />} active={isModules} />
                       <SidebarLink to={UPSTREAMS_PATH} label="Upstreams" iconSlot={<Server />} active={isUpstreams} />
+                      <SidebarLink to={CONCEPTS_PATH} label="Concepts" iconSlot={<Layers />} active={isConcepts} />
+                      <SidebarLink to={WIRING_PATH} label="Wiring" iconSlot={<GitBranch />} active={isWiring} />
                     </>
                   }
                 />
