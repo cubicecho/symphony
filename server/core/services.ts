@@ -28,6 +28,8 @@ export interface Upstream {
   headers: StoredHeader[];
   /** Null until an introspection succeeds. */
   schema: CachedSchema | null;
+  /** True for one Symphony provides itself (the unified API), which can't be edited, refreshed or removed. */
+  builtIn?: boolean;
 }
 
 /** What adding or changing an upstream takes. */
@@ -167,6 +169,14 @@ export interface ModuleService {
   remove(id: string): Promise<boolean>;
   /** Compiles a source without storing it, against an upstream's schema. */
   check(upstream: string, source: string): Promise<CompileResult>;
+  /**
+   * Compiles every module of an upstream again against its schema as it is now, storing the ones whose status or
+   * errors changed. Each of those goes up a version, since its compiled code may have changed with it.
+   *
+   * @param upstream - The upstream's id or name.
+   * @returns How many modules changed; 0 for an unknown upstream.
+   */
+  recheck(upstream: string): Promise<number>;
 }
 
 /** A module placed on a page. */

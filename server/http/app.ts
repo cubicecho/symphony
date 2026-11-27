@@ -7,11 +7,19 @@ import { isProduction, trustProxy, version } from '../core/config.ts';
 import { HTTP_DEFAULTS } from '../core/defaults.ts';
 import { errorMessage } from '../core/errors.ts';
 import { createEventFeed } from '../core/events.ts';
-import type { GraphQLRequest, Services, SourcesChange, UpstreamEvent } from '../core/services.ts';
+import {
+  type CachedSchema,
+  type GraphQLRequest,
+  type Services,
+  type SourcesChange,
+  UpstreamChange,
+  type UpstreamEvent,
+} from '../core/services.ts';
 import { HttpStatus } from '../core/wire.ts';
 import type { Database } from '../db/client.ts';
 import { createConceptService } from '../gateway/concept-service.ts';
 import { createUnifiedService, UNIFIED_ENDPOINT, type UnifiedGatewayService } from '../gateway/unified-service.ts';
+import { UNIFIED_UPSTREAM_ID, withUnifiedUpstream } from '../gateway/unified-upstream.ts';
 import { createWiringService } from '../gateway/wiring-service.ts';
 import { graphqlLogger } from '../graphql/logger.ts';
 import { useOperationLimits } from '../graphql/operation-limits.ts';
@@ -31,7 +39,10 @@ export const WEB_DIST = fileURLToPath(new URL('../../dist', import.meta.url));
 /** Compiled module code never changes under one URL, since the version is in it. */
 const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
 
-/** What the app is built from. Services left out are built over `db`; the unified gateway always is. */
+/**
+ * What the app is built from. Services left out are built over `db`; the unified gateway always is. A given
+ * `upstreams` is the stored upstreams only: the app adds the built-in `unified` one to what it hands out.
+ */
 export interface AppDeps extends Partial<Omit<Services, 'unified'>> {
   db: Database;
   /** The key MCP clients send. Empty shuts /mcp. */
@@ -81,13 +92,34 @@ export function createApp({ db, mcpKey, checkDatabase, dist, ...deps }: AppDeps)
   // Upstream changes are followed in subscription order: wiring moves overrides first, then the gateway recomposes.
   const upstreamEvents = createEventFeed<UpstreamEvent>('[upstreams]');
   const changes = createEventFeed<SourcesChange>('[gateway]');
-  const upstreams = deps.upstreams ?? createUpstreamService({ db, events: upstreamEvents, ...fetchDeps });
-  const concepts = deps.concepts ?? createConceptService({ db, upstreams, changes });
-  const wiring = deps.wiring ?? createWiringService({ db, concepts, upstreams, changes, upstreamEvents });
-  const unified = createUnifiedService({ upstreams, concepts, wiring, changes, upstreamEvents, ...fetchDeps });
+  const servedSchemas = createEventFeed<CachedSchema>('[gateway]');
+  // The gateway composes from the stored upstreams; everything else sees them with the built-in `unified` one.
+  const stored = deps.upstreams ?? createUpstreamService({ db, events: upstreamEvents, ...fetchDeps });
+  const concepts = deps.concepts ?? createConceptService({ db, upstreams: stored, changes });
+  const wiring = deps.wiring ?? createWiringService({ db, concepts, upstreams: stored, changes, upstreamEvents });
+  const unified = createUnifiedService({
+    upstreams: stored,
+    concepts,
+    wiring,
+    changes,
+    upstreamEvents,
+    servedSchemas,
+    ...fetchDeps,
+  });
+  const upstreams = withUnifiedUpstream(stored, unified);
+  const modules = deps.modules ?? createModuleService({ db, upstreams });
+  // A schema that changed under its modules re-checks them, so a page shows a module that broke as failing.
+  upstreamEvents.subscribe(async (event) => {
+    if (event.change === UpstreamChange.Refreshed) {
+      await modules.recheck(event.id);
+    }
+  });
+  servedSchemas.subscribe(async () => {
+    await modules.recheck(UNIFIED_UPSTREAM_ID);
+  });
   const services: Services = {
     upstreams,
-    modules: deps.modules ?? createModuleService({ db, upstreams }),
+    modules,
     pages: deps.pages ?? createPageService({ db }),
     catalog: deps.catalog ?? createComponentCatalog(),
     concepts,

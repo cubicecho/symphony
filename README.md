@@ -6,6 +6,7 @@ It builds runtime web UIs over GraphQL APIs that have none of their own.
 - **Upstreams.** Register a GraphQL API: its URL, plus headers kept on the server. Symphony introspects it and caches the schema.
 - **Modules.** A module is one React (TSX) file bound to one upstream. Agents write them over MCP, and people write them in the web editor.
 - **Checks.** Symphony checks every module (allowed imports, a default export, and GraphQL documents validated against the cached schema), then compiles it with esbuild. Errors come back with line and column, so an agent can fix them and submit again.
+- **The unified upstream.** A built-in upstream named `unified` serves every upstream and concept composed into one API (the schema `/unified/graphql` serves). Modules can be written against it like any other; it can't be edited, refreshed or deleted, and its modules are checked again whenever a recompose changes its schema.
 - **Pages.** People place modules on pages. Modules render live data through Symphony's proxy, which checks each document before it forwards it. The browser never sees an upstream's address or its credentials.
 
 The rules a module follows, and the `symphony` runtime it imports, are in

@@ -26,6 +26,8 @@ type OpenDialog =
 export function UpstreamsView() {
   const query = useUpstreams();
   const upstreams = query.data ?? [];
+  // The built-in unified API is listed beside them, but has nothing to serve until one is added.
+  const addedCount = upstreams.filter((upstream) => upstream.builtIn === false).length;
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const [sessions, setSessions] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
@@ -73,7 +75,7 @@ export function UpstreamsView() {
             <LoadState
               query={query}
               what="your upstreams"
-              count={upstreams.length}
+              count={addedCount}
               emptySlot={
                 <EmptyState
                   iconSlot={<Server />}
@@ -90,7 +92,7 @@ export function UpstreamsView() {
                 />
               }
             />
-            {upstreams.length === 0 ? null : (
+            {addedCount === 0 ? null : (
               <List
                 label="Upstreams"
                 contentSlot={upstreams.map((upstream) => (
@@ -130,7 +132,7 @@ function UpstreamRow({ upstream, onEdit, onViewSchema, onProblem }: UpstreamRowP
   const refreshSchema = useRefreshSchema();
   const deleteUpstream = useDeleteUpstream();
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
-  const { schema } = upstream;
+  const { schema, builtIn } = upstream;
 
   /** Introspects the upstream again, and says so when it fails. */
   const refresh = (): void => {
@@ -148,7 +150,7 @@ function UpstreamRow({ upstream, onEdit, onViewSchema, onProblem }: UpstreamRowP
 
   const schemaState =
     schema === null ? (
-      <Badge variant="warning-soft">Schema not fetched</Badge>
+      <Badge variant="warning-soft">{builtIn ? 'Not composed yet' : 'Schema not fetched'}</Badge>
     ) : (
       <span className="text-foreground/60 text-xs">
         {countLabel(schema.typeCount, 'type', 'types')}, fetched {formatDateTime(schema.fetchedAt)}
@@ -160,40 +162,59 @@ function UpstreamRow({ upstream, onEdit, onViewSchema, onProblem }: UpstreamRowP
       <ListItem
         title={upstream.name}
         description={<span className="break-all">{upstream.url}</span>}
-        meta={schemaState}
+        meta={
+          builtIn ? (
+            <>
+              <Badge variant="info-soft">Built in</Badge> {schemaState}
+            </>
+          ) : (
+            schemaState
+          )
+        }
         actionSlot={
-          <>
+          builtIn ? (
             <Button
               size="sm"
               variant="outline"
-              iconSlot={<RefreshCw />}
-              content="Refresh schema"
-              loading={refreshSchema.isPending}
-              loadingLabel="Refreshing…"
-              onClick={refresh}
+              iconSlot={<Eye />}
+              content="View schema"
+              disabled={schema === null}
+              onClick={onViewSchema}
             />
-            <Menu>
-              <MenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label={`Actions for ${upstream.name}`}
-                  iconSlot={<Ellipsis />}
-                />
-              </MenuTrigger>
-              <MenuContent align="end">
-                <MenuItem iconSlot={<Pencil />} label="Edit" onSelect={onEdit} />
-                <MenuItem iconSlot={<Eye />} label="View schema" disabled={schema === null} onSelect={onViewSchema} />
-                <MenuSeparator />
-                <MenuItem
-                  iconSlot={<Trash2 />}
-                  label="Delete"
-                  destructive
-                  onSelect={() => setIsConfirmingDelete(true)}
-                />
-              </MenuContent>
-            </Menu>
-          </>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                iconSlot={<RefreshCw />}
+                content="Refresh schema"
+                loading={refreshSchema.isPending}
+                loadingLabel="Refreshing…"
+                onClick={refresh}
+              />
+              <Menu>
+                <MenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Actions for ${upstream.name}`}
+                    iconSlot={<Ellipsis />}
+                  />
+                </MenuTrigger>
+                <MenuContent align="end">
+                  <MenuItem iconSlot={<Pencil />} label="Edit" onSelect={onEdit} />
+                  <MenuItem iconSlot={<Eye />} label="View schema" disabled={schema === null} onSelect={onViewSchema} />
+                  <MenuSeparator />
+                  <MenuItem
+                    iconSlot={<Trash2 />}
+                    label="Delete"
+                    destructive
+                    onSelect={() => setIsConfirmingDelete(true)}
+                  />
+                </MenuContent>
+              </Menu>
+            </>
+          )
         }
       />
       <ConfirmDialog

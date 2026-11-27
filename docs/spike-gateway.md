@@ -123,6 +123,22 @@ alternative for HTTP sources, but it is fixed at creation.
 Federation errors name the subgraphs only in their message text. A bad OpenAPI URL that answers 404 with JSON does
 not fail to load: it fails later, as a transform error, because the loader accepts any JSON.
 
+### The unified API as an upstream
+
+The served supergraph is also a built-in upstream named `unified` (fixed id `UNIFIED_UPSTREAM_ID`), added by
+`withUnifiedUpstream` in `server/gateway/unified-upstream.ts`. `createApp` decorates the stored upstream service with
+it and hands the decorated one to `/graphql`, `/mcp`, `/proxy` and the modules. The concepts, the wiring and the
+gateway get the stored one, so the gateway never composes from its own output. Its schema is introspected in-process
+from the runtime after each successful composition (so it is exactly what `/unified/graphql` serves); requests are
+validated against it and run through `runtime.fetch`, with no HTTP round trip. Adding, editing, refreshing or deleting
+it, or naming another upstream `unified`, is refused with BAD_USER_INPUT. The admin API marks it `builtIn: true`, and so
+does `list_upstreams`.
+
+When a composition changes the served SDL, the gateway tells `servedSchemas`, and the app re-checks the modules
+written against `unified` (`ModuleService.recheck`). A stored upstream's refresh re-checks its modules the same way. A
+composition that fails, or serves the same SDL, re-checks nothing. Modules carry their upstream's id without a foreign
+key now (the built-in upstream has no row); removing a stored upstream deletes its modules in the same transaction.
+
 ## Dependencies
 
 Added, all pinned exactly: `@graphql-hive/gateway-runtime@2.14.4`, `@graphql-mesh/fusion-composition@0.11.4`,

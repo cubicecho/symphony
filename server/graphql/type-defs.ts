@@ -36,6 +36,8 @@ export const TYPE_DEFS = /* GraphQL */ `
     schema: UpstreamSchema
     "Where the browser sends this upstream's queries."
     proxyPath: String!
+    "True for the built-in unified API (named unified): its schema is the composed one, and it can't be edited, refreshed or deleted."
+    builtIn: Boolean!
   }
 
   input AddUpstreamInput {

@@ -114,6 +114,35 @@ export function createModuleService(deps: ModuleServiceDeps, overrides: Partial<
 
     check: async (upstream, source) => (await compileFor(upstream, source, 'check')).compile,
 
+    recheck: async (upstream) => {
+      const found = await deps.upstreams.find(upstream);
+      if (found === null) {
+        return 0;
+      }
+      const rows = await db.select().from(modules).where(eq(modules.upstreamId, found.id));
+      let changed = 0;
+      for (const row of rows) {
+        const compile = await compileModule({
+          source: row.source,
+          fileName: row.id,
+          schema: found.schema?.schema ?? null,
+          allowedImports: await allowedImports(),
+        });
+        const status = compile.ok ? ModuleStatus.Ready : ModuleStatus.Failed;
+        const isSame = status === row.status && JSON.stringify(compile.errors) === JSON.stringify(row.errors);
+        if (isSame) {
+          continue;
+        }
+        await db
+          .update(modules)
+          .set({ compiled: compile.compiled, status, errors: compile.errors, version: row.version + 1 })
+          .where(eq(modules.id, row.id));
+        console.log(`[modules] rechecked ${row.name} against ${found.name}: ${status}`);
+        changed += 1;
+      }
+      return changed;
+    },
+
     save: async (input) => {
       const name = input.name.trim();
       const isNameValid = name !== '' && name.length <= settings.maxNameChars;

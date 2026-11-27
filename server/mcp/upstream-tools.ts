@@ -22,7 +22,7 @@ export function registerUpstreamTools(server: McpServer, services: Services): vo
     {
       title: 'List upstreams',
       description:
-        'Lists the GraphQL APIs (upstreams) Symphony wraps: name, url, whether its schema is cached, its type count and when it was fetched. Every module is written against one of them; start here.',
+        'Lists the GraphQL APIs (upstreams) Symphony wraps: name, url, whether its schema is cached, its type count and when it was fetched. Every module is written against one of them; start here. The built-in `unified` one (builtIn: true) is every upstream and concept composed into one API.',
       annotations: { readOnlyHint: true },
     },
     guard('list_upstreams', async () => {
@@ -34,6 +34,7 @@ export function registerUpstreamTools(server: McpServer, services: Services): vo
         schemaCached: upstream.schema !== null,
         typeCount: upstream.schema?.typeCount ?? 0,
         fetchedAt: upstream.schema?.fetchedAt.toISOString() ?? null,
+        builtIn: upstream.builtIn === true,
       }));
       return jsonResult(rows, 'There are more upstreams than fit; ask for one by name with `get_schema`.');
     }),
