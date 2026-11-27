@@ -22,6 +22,7 @@ import {
   toSourcePosition,
   visitNodes,
 } from './gql-extract.ts';
+import { findRouteProblems } from './route-check.ts';
 
 const { maxSourceChars, maxDocuments } = MODULE_DEFAULTS;
 
@@ -70,7 +71,7 @@ export async function compileModule(input: CompileInput): Promise<CompileResult>
   const { program } = parsed.file;
   const errors: CompileError[] = [...checkDefaultExport(program), ...checkImports(program, input.allowedImports)];
   const graphql = checkGraphql(program, input.upstreams);
-  errors.push(...graphql.errors);
+  errors.push(...graphql.errors, ...checkRoutes(program));
   const hasErrors = errors.length > 0;
   if (hasErrors) {
     return failed(errors, graphql.documents);
@@ -363,6 +364,21 @@ function checkGraphql(
     }
   }
   return { errors, documents };
+}
+
+/**
+ * Checks the module's literal route paths against the routes its `Routes` declare.
+ *
+ * @param program - The parsed module.
+ * @returns The ROUTES errors, in source order.
+ */
+function checkRoutes(program: Program): CompileError[] {
+  return findRouteProblems(program).map((problem) => ({
+    stage: CompileStage.Routes,
+    message: problem.message,
+    line: problem.position?.line ?? null,
+    column: problem.position?.column ?? null,
+  }));
 }
 
 /**

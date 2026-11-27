@@ -58,6 +58,7 @@ export const TYPE_DEFS = /* GraphQL */ `
     SOURCE
     IMPORTS
     GRAPHQL
+    ROUTES
     TRANSFORM
   }
 
