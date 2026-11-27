@@ -1,6 +1,12 @@
 // The environment, read in one place. Every getter falls back to a group in defaults.ts.
 import { readFileSync } from 'node:fs';
-import { DATABASE_DEFAULTS, HTTP_DEFAULTS, STORE_DEFAULTS } from './defaults.ts';
+import {
+  DATABASE_DEFAULTS,
+  HTTP_DEFAULTS,
+  STORE_DEFAULTS,
+  SUBSCRIPTION_DEFAULTS,
+  type SubscriptionSettings,
+} from './defaults.ts';
 
 /** A postgres:// (or postgresql://) URL. Anything else in DATABASE_URL is refused by preflight. */
 export const POSTGRES_URL = /^postgres(ql)?:\/\//;
@@ -67,6 +73,26 @@ export function databaseUrl(): string {
  */
 export function dbConnectTimeoutMs(): number {
   return envInteger(process.env.DB_CONNECT_TIMEOUT_MS, DATABASE_DEFAULTS.connectTimeoutMs);
+}
+
+/**
+ * The proxy's subscription stream limits.
+ *
+ * @returns `SUBSCRIPTION_DEFAULTS`, with `SUBSCRIPTION_MAX_STREAMS`, `SUBSCRIPTION_MAX_STREAMS_PER_UPSTREAM`,
+ * `SUBSCRIPTION_IDLE_TIMEOUT_SECONDS` and `SUBSCRIPTION_MAX_EVENT_BYTES` over it where they are set.
+ */
+export function subscriptionSettings(): SubscriptionSettings {
+  const env = process.env;
+  return {
+    ...SUBSCRIPTION_DEFAULTS,
+    maxStreams: envInteger(env.SUBSCRIPTION_MAX_STREAMS, SUBSCRIPTION_DEFAULTS.maxStreams),
+    maxStreamsPerUpstream: envInteger(
+      env.SUBSCRIPTION_MAX_STREAMS_PER_UPSTREAM,
+      SUBSCRIPTION_DEFAULTS.maxStreamsPerUpstream,
+    ),
+    idleTimeoutSeconds: envInteger(env.SUBSCRIPTION_IDLE_TIMEOUT_SECONDS, SUBSCRIPTION_DEFAULTS.idleTimeoutSeconds),
+    maxEventBytes: envInteger(env.SUBSCRIPTION_MAX_EVENT_BYTES, SUBSCRIPTION_DEFAULTS.maxEventBytes),
+  };
 }
 
 /**

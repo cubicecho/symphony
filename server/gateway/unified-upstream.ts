@@ -100,6 +100,19 @@ export function withUnifiedUpstream(upstreams: UpstreamService, unified: ServedG
       return upstreams.refresh(id);
     },
 
+    subscribe: async (id, request, options) => {
+      if (isUnifiedUpstream(id) === false) {
+        return upstreams.subscribe(id, request, options);
+      }
+      return {
+        isOpen: false,
+        body: errorBody(
+          `The ${UNIFIED_UPSTREAM_NAME} API does not stream subscriptions yet. Subscribe through the upstream that serves the field.`,
+          ErrorCode.BadUserInput,
+        ),
+      };
+    },
+
     execute: async (id, request) => {
       if (isUnifiedUpstream(id) === false) {
         return upstreams.execute(id, request);
