@@ -82,6 +82,16 @@ export function withItemPath(search: Record<string, unknown>, itemId: string, pa
 }
 
 /**
+ * The path an editor's preview starts at: the one a preview link opened in a new tab put in the hash.
+ *
+ * @param hash - The editor URL's hash, without its `#`: `/orders/o3`, or empty.
+ * @returns That path, or the root when the hash holds no module path.
+ */
+export function previewStartOf(hash: string): string {
+  return hash.startsWith(ROOT_PATH) ? hash : ROOT_PATH;
+}
+
+/**
  * The splat the full-page view's URL carries for a module path.
  *
  * @param path - `/orders/o3`.

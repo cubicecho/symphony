@@ -3,6 +3,7 @@ import {
   itemSearchKey,
   moduleSearchOf,
   pathOfSplat,
+  previewStartOf,
   splatOf,
   withItemPath,
 } from '../../web/src/modules/module-url.ts';
@@ -74,6 +75,12 @@ describe('module URLs', () => {
     expect(moduleSearchOf({ 'm.x': 'orders/o3', q: 'orders' })).toEqual({ 'm.x': '/orders/o3', q: 'orders' });
     expect(splatOf(itemPathOf({ 'm.x': 'orders/o3' }, 'x'))).toBe('orders/o3');
     expect(splatOf('orders/o3')).toBe('orders/o3');
+  });
+
+  it('starts an editor preview at the path in the hash a preview link opened', () => {
+    expect(previewStartOf('/orders/o3')).toBe('/orders/o3');
+    expect(previewStartOf('')).toBe('/');
+    expect(previewStartOf('section-2')).toBe('/');
   });
 
   it('turns a module path into the full-page splat and back', () => {

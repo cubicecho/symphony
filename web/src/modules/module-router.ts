@@ -1,8 +1,8 @@
 // Where a module's own path lives while it runs: in its page's URL, in the full-page view's URL, or, in the editor's
 // preview, in memory. The runtime's `Routes`, `RouteLink` and `useRoute` read it through `ModuleRouterContext`.
-import { useNavigate, useRouter, useSearch } from '@tanstack/react-router';
+import { useLocation, useNavigate, useRouter, useSearch } from '@tanstack/react-router';
 import { createContext, useContext, useMemo, useState } from 'react';
-import { itemPathOf, withItemPath } from './module-url.ts';
+import { itemPathOf, previewStartOf, withItemPath } from './module-url.ts';
 import { ROOT_PATH } from './route-match.ts';
 
 /** A module's path, and the way to change it. */
@@ -51,16 +51,18 @@ export function useModuleRouter(): ModuleRouter {
 
 /**
  * The router of a module card: on a page, the item's path is kept in the page URL under `m.<itemId>`; with no item
- * (the editor's preview) it is kept in memory, so the editor's URL is left alone.
+ * (the editor's preview) it is kept in memory, so the editor's URL is left alone. A preview link's address is the
+ * editor's with the path as its hash (`#/orders/o3`), and a preview opened at one starts there.
  *
  * @param itemId - The page item the card draws, or undefined in the editor.
  * @returns The router.
  */
 export function useCardRouter(itemId: string | undefined): ModuleRouter {
   const search: Record<string, unknown> = useSearch({ strict: false });
+  const hash = useLocation({ select: (location) => location.hash });
   const navigate = useNavigate();
   const router = useRouter();
-  const [memoryPath, setMemoryPath] = useState(ROOT_PATH);
+  const [memoryPath, setMemoryPath] = useState(() => previewStartOf(hash));
   const path = itemId === undefined ? memoryPath : itemPathOf(search, itemId);
 
   return useMemo<ModuleRouter>(() => {
