@@ -64,7 +64,10 @@ export default function RecentOrders() {
    A document for another of its upstreams is tagged `gql.from('<name>')`, with the upstream's name as a
    string literal, so the compiler knows which schema to check it against. A name the module does not
    list is an error.
-5. **TypeScript syntax is allowed but not type-checked yet.** Types are stripped, so a wrong type
+5. **Every `RouteLink to` and `navigate` path the compiler can read matches a route** in the module's
+   `<Routes routes={{…}}>` (see "Routes inside a module"). A string literal is checked as it is; in a template
+   literal each `${…}` stands for one `:param` segment. A path held in a variable is not checked.
+6. **TypeScript syntax is allowed but not type-checked yet.** Types are stripped, so a wrong type
    compiles. Read the schema (`get_schema`) for the real field names and types.
 
 ## The `symphony` runtime
@@ -75,6 +78,9 @@ export default function RecentOrders() {
 | `useQuery`        | `useQuery<T>(document, { variables?, refetchIntervalSeconds?, enabled? }?)` → `{ data: T \| undefined, error: Error \| null, isLoading, isPending, isError: boolean, refetch() }` | Runs a query against the document's upstream. Cached per document and variables. The result can be passed straight to `LoadState`'s `query`, which draws loading and failure and renders nothing once data is there.                                                           |
 | `useMutation`     | `useMutation<T, V>(document)` → `{ mutate(variables?: V): Promise<T>, data: T \| undefined, error: Error \| null, isPending: boolean }`                                           | Runs a mutation against the document's upstream. When it succeeds, every query of this module is fetched again.                                                                                                                                                                |
 | `useSubscription` | `useSubscription<T>(document, { variables?, enabled?, maxEvents?, onEvent? }?)` → `{ events: T[], latest: T \| undefined, status, error: Error \| null }`                         | Follows a subscription on the document's upstream. `events` holds the `data` of the latest `maxEvents` (default 100) events, oldest first; `onEvent(data)` is called as each arrives. `status` is `'idle'` (not enabled), `'connecting'`, `'open'`, `'complete'` or `'error'`. |
+| `Routes`      | `<Routes routes={{ '/': () => …, '/orders/:id': () => … }} fallback?={() => …} />`                                                                                                | Draws the route the module's path is on. `:name` segments are parameters; a literal segment wins over a parameter. A path no route matches draws `fallback`, or a line saying so with a link back to `/`.            |
+| `RouteLink`   | `<RouteLink to="/orders/o3" …anchor props>`                                                                                                                                       | A link to a path in the module, as an `<a>`: a plain click goes there in place, a modified one opens a new tab. Fits a cubeui `linkSlot`.                                                                            |
+| `useRoute`    | `useRoute()` → `{ path: string, params: Record<string, string>, navigate(path: string) }`                                                                                         | Where the module is. `params` holds the matched route's `:param` values (empty outside `Routes`); `navigate` goes to another path.                                                                                   |
 
 An upstream's GraphQL errors arrive as `error`, with the upstream's messages joined.
 
@@ -157,6 +163,60 @@ const [runId, setRunId] = useState<string | null>(null);
 const { latest } = useSubscription<{ runEvents: RunEvent }>(EVENTS, { variables: { runId }, enabled: runId !== null });
 // onClick: setRunId((await start.mutate({ task })).startRun.id)
 ```
+
+## Routes inside a module
+
+A module that is more than one view (a list that opens a detail, tabs) gives each view a path inside the
+module, instead of switching with its own state. Back and forward then work, a subpage can be linked to, and a
+reload keeps it.
+
+```tsx
+import { gql, RouteLink, Routes, useQuery, useRoute } from 'symphony';
+import { Button } from '@/components/ui/button';
+
+const ORDERS = gql`
+  query Orders {
+    orders(first: 20) {
+      id
+      total
+    }
+  }
+`;
+
+function OrderList() {
+  const orders = useQuery<{ orders: { id: string; total: number }[] }>(ORDERS);
+  return (
+    <ul>
+      {orders.data?.orders.map((order) => (
+        <li key={order.id}>
+          <RouteLink to={`/orders/${order.id}`}>{order.total}</RouteLink>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function OrderDetail() {
+  const { params } = useRoute();
+  // …query the order params.id
+  return <Button variant="outline" content="All orders" linkSlot={<RouteLink to="/" />} />;
+}
+
+export default function Orders() {
+  return <Routes routes={{ '/': () => <OrderList />, '/orders/:id': () => <OrderDetail /> }} />;
+}
+```
+
+- **Paths are the module's own**, from its root `/`, which is where it starts. They start with `/`; a route
+  segment `:name` is a parameter, read from `useRoute().params.name`.
+- **Where the path lives.** On a page, each placed module's path is in the page URL under its item:
+  `/pages/home?m.<itemId>=/orders/o3`, so several modules can each be on their own subpage. A module opened full
+  page (the item's ⋯ menu, "Open full page") has it in the URL's path: `/pages/home/items/<itemId>/orders/o3`.
+  In the editor's preview the path is kept in memory, and the editor's URL is left alone.
+- **The compiler checks literal paths.** `<RouteLink to="/ordrs/o3">` or `navigate('/ordrs/o3')` that
+  matches no route is a ROUTES error at its line. Declare the table in place or as a top-level `const`, so the
+  compiler can read it. A table it can't read (a spread, a computed key) leaves the paths unchecked.
+- **A route's view is called as a component**, so it may use hooks.
 
 ## More than one upstream
 
