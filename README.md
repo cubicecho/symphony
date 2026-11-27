@@ -42,6 +42,14 @@ Then ask for a module, for example "a module showing recent orders as a table".
 
 You then place the module on a page.
 
+**Concept proposals.** `propose_concepts` drafts concepts from the upstreams' cached schemas: object types in two
+or more upstreams whose names match once a prefix or suffix is removed, each with `id: ID!` and a Query lookup by
+id. Fields every member has with one scalar type are shared, the rest owned; `createX` / `updateX` / `deleteX`
+become member documents when their arguments map by name. Each draft comes with reasons, a confidence per
+decision, and the concept validator's problems. `submit_concept` stores a definition as a pending proposal (resubmit
+with the returned id until it passes), and a person accepts or rejects it over the admin API
+(`acceptConceptProposal`, `rejectConceptProposal`); accepting saves it as a concept.
+
 ## Trust model (Phase 1)
 
 - **Single operator, self-hosted.** The web UI, the admin API at `/graphql` and the unified API at `/unified/graphql` have no sign-in. Only `/mcp` takes a key. Run Symphony on a network you trust.
