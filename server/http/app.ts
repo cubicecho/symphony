@@ -124,7 +124,8 @@ export function createApp({ db, mcpKey, checkDatabase, dist, ...deps }: AppDeps)
     pages: deps.pages ?? createPageService({ db }),
     catalog: deps.catalog ?? createComponentCatalog(),
     concepts,
-    conceptProposals: deps.conceptProposals ?? createProposalService({ db, upstreams, concepts }),
+    // Drafts come from the stored upstreams only: the built-in one already serves the concepts.
+    conceptProposals: deps.conceptProposals ?? createProposalService({ db, upstreams: stored, concepts }),
     wiring,
     unified,
   };
