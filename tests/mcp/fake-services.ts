@@ -50,6 +50,8 @@ function fakeCompile(source: string): CompileResult {
 /** What the fakes record, for assertions. */
 export interface FakeCalls {
   executed: { id: string; query: string }[];
+  /** The upstreams each check_module call passed, in order. */
+  checked: string[][];
 }
 
 /**
@@ -66,7 +68,7 @@ export function createFakeServices(
   services: Services;
   calls: FakeCalls;
 } {
-  const calls: FakeCalls = { executed: [] };
+  const calls: FakeCalls = { executed: [], checked: [] };
   const schema = buildSchema(FIXTURE_SDL);
   const upstreams: Upstream[] = [
     {
@@ -120,12 +122,19 @@ export function createFakeServices(
       list: async () => [...modules.values()],
       find: async (id) => modules.get(id) ?? null,
       remove: async (id) => modules.delete(id),
-      check: async (_upstream, source) => fakeCompile(source),
+      check: async (refs, source) => {
+        calls.checked.push(refs);
+        return fakeCompile(source);
+      },
       recheck: async () => 0,
       save: async (input) => {
-        const upstream = await find(input.upstream);
-        if (upstream === null) {
-          throw notFound(`No upstream "${input.upstream}".`);
+        const upstreamIds: string[] = [];
+        for (const ref of input.upstreams) {
+          const upstream = await find(ref);
+          if (upstream === null) {
+            throw notFound(`No upstream "${ref}".`);
+          }
+          upstreamIds.push(upstream.id);
         }
         const previous = input.id === undefined ? undefined : modules.get(input.id);
         const isUnknownId = input.id !== undefined && previous === undefined;
@@ -137,7 +146,7 @@ export function createFakeServices(
           id: previous?.id ?? `m${modules.size + 1}`,
           name: input.name,
           description: input.description ?? '',
-          upstreamId: upstream.id,
+          upstreamIds,
           source: input.source,
           compiled: compile.compiled,
           status: compile.ok ? ModuleStatus.Ready : ModuleStatus.Failed,

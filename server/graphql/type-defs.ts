@@ -76,12 +76,13 @@ export const TYPE_DEFS = /* GraphQL */ `
     FAILED
   }
 
-  "A UI module: one TSX file bound to one upstream."
+  "A UI module: one TSX file over one or more upstreams."
   type Module {
     id: ID!
     name: String!
     description: String!
-    upstream: Upstream!
+    "The upstreams it reads, in order. The first is the default: a plain gql document goes to it, and gql.from('<name>') to another."
+    upstreams: [Upstream!]!
     source: String!
     status: ModuleStatus!
     errors: [CompileError!]!
@@ -97,7 +98,8 @@ export const TYPE_DEFS = /* GraphQL */ `
     id: ID
     name: String!
     description: String
-    upstreamId: ID!
+    "The upstreams it reads, in order: the first is the default. At least one, none twice."
+    upstreamIds: [ID!]!
     source: String!
   }
 

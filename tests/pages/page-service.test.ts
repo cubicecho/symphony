@@ -1,6 +1,6 @@
 import { HOME_SLUG, type PageService } from '../../server/core/services.ts';
 import type { OpenedDatabase } from '../../server/db/client.ts';
-import { modules, upstreams } from '../../server/db/schema.ts';
+import { modules, moduleUpstreams, upstreams } from '../../server/db/schema.ts';
 import { createPageService } from '../../server/pages/page-service.ts';
 import { openTestDatabase } from '../db.ts';
 
@@ -15,11 +15,9 @@ beforeAll(async () => {
     .insert(upstreams)
     .values({ name: 'shop', url: 'http://x.test/graphql' })
     .returning();
-  const [module] = await opened.db
-    .insert(modules)
-    .values({ name: 'Orders', upstreamId: upstream?.id ?? '', source: 'x', status: 'READY' })
-    .returning();
+  const [module] = await opened.db.insert(modules).values({ name: 'Orders', source: 'x', status: 'READY' }).returning();
   moduleId = module?.id ?? '';
+  await opened.db.insert(moduleUpstreams).values({ moduleId, upstreamId: upstream?.id ?? '', position: 0 });
 });
 afterAll(() => opened.close());
 

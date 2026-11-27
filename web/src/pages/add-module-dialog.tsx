@@ -85,7 +85,7 @@ export function AddModuleDialog({ open, onOpenChange, page }: AddModuleDialogPro
                 placeholder="Choose a module"
                 options={ready.map((module) => ({
                   value: module.id,
-                  label: `${module.name} (${module.upstream.name})`,
+                  label: `${module.name} (${module.upstreams.map((upstream) => upstream.name).join(', ')})`,
                 }))}
                 validators={{ onChange: ({ value }) => (value === '' ? 'Choose a module.' : undefined) }}
               />

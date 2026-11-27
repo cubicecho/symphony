@@ -4,9 +4,14 @@ import { MODULE_DEFAULTS } from '../../server/core/defaults.ts';
 import { RUNTIME_IMPORTS } from '../../server/modules/allowlist.ts';
 import { compileModule } from '../../server/modules/compile.ts';
 import { type CompileResult, CompileStage } from '../../server/modules/compile-result.ts';
+import { MEMO_SDL } from '../fixtures/memo-upstream.ts';
 import { FIXTURE_SDL } from '../fixtures/upstream.ts';
 
 const schema = buildSchema(FIXTURE_SDL);
+const memoSchema = buildSchema(MEMO_SDL);
+/** The default upstream's name in these tests, and a second one's. */
+const SHOP = 'shop';
+const MEMOS = 'memos';
 const allowedImports = new Set<string>([...RUNTIME_IMPORTS, '@/components/card-layout', '@/components/ui/button']);
 
 const VALID = `import { gql, useQuery } from 'symphony';
@@ -39,8 +44,50 @@ export default function RecentOrders() {
  * @returns The result.
  */
 function compile(source: string, withSchema = true): Promise<CompileResult> {
-  return compileModule({ source, fileName: 'test-module', schema: withSchema ? schema : null, allowedImports });
+  const upstreams = [{ name: SHOP, schema: withSchema ? schema : null }];
+  return compileModule({ source, fileName: 'test-module', upstreams, allowedImports });
 }
+
+/**
+ * Compiles a source over two upstreams: the fixture shop (the default) and the memos.
+ *
+ * @param source - The TSX.
+ * @returns The result.
+ */
+function compileTwo(source: string): Promise<CompileResult> {
+  const upstreams = [
+    { name: SHOP, schema },
+    { name: MEMOS, schema: memoSchema },
+  ];
+  return compileModule({ source, fileName: 'test-module', upstreams, allowedImports });
+}
+
+/** A module reading the shop by default and the memos through `gql.from`. */
+const TWO_UPSTREAMS = `import { gql, useQuery } from 'symphony';
+
+const ORDERS = gql\`
+  query Orders {
+    orders(first: 1) {
+      id
+    }
+  }
+\`;
+
+const MEMO_LIST = gql.from('memos')\`
+  query Memos {
+    memos {
+      id
+      title
+    }
+  }
+\`;
+
+export default function Both() {
+  useQuery(ORDERS);
+  useQuery(MEMO_LIST);
+  return null;
+}
+`;
 
 describe('compileModule', () => {
   it('compiles a valid module and lists its documents', async () => {
@@ -192,5 +239,71 @@ describe('compileModule', () => {
     expect(result.errors).toEqual([
       expect.objectContaining({ stage: CompileStage.Graphql, line: MODULE_DEFAULTS.maxDocuments + 2 }),
     ]);
+  });
+});
+
+describe('compileModule over several upstreams', () => {
+  it('checks each document against its own upstream', async () => {
+    const result = await compileTwo(TWO_UPSTREAMS);
+    expect(result.errors).toEqual([]);
+    expect(result.ok).toBe(true);
+    expect(result.documents).toHaveLength(2);
+  });
+
+  it('checks a plain gql document against the default upstream only', async () => {
+    const result = await compileTwo(TWO_UPSTREAMS.replace('    orders(first: 1) {', '    memos {'));
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual([expect.objectContaining({ stage: CompileStage.Graphql, line: 5 })]);
+    expect(result.errors[0]?.message).toContain('"memos"');
+  });
+
+  it('checks a gql.from document against the upstream it names', async () => {
+    const result = await compileTwo(TWO_UPSTREAMS.replace('      title\n', '      total\n'));
+    expect(result.errors).toEqual([expect.objectContaining({ stage: CompileStage.Graphql, line: 15, column: 7 })]);
+    expect(result.errors[0]?.message).toContain('"total"');
+  });
+
+  it('refuses a name the module does not read', async () => {
+    const result = await compileTwo(TWO_UPSTREAMS.replace("gql.from('memos')", "gql.from('billing')"));
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual([expect.objectContaining({ stage: CompileStage.Graphql, line: 11 })]);
+    expect(result.errors[0]?.message).toContain("gql.from('billing')");
+    expect(result.errors[0]?.message).toContain('"shop", "memos"');
+  });
+
+  it('refuses gql.from with anything but one string literal', async () => {
+    const variable = TWO_UPSTREAMS.replace("gql.from('memos')", 'gql.from(MEMOS_NAME)');
+    const twoArguments = TWO_UPSTREAMS.replace("gql.from('memos')", "gql.from('memos', 'shop')");
+    for (const source of [variable, twoArguments]) {
+      const result = await compileTwo(source);
+      expect(result.ok).toBe(false);
+      expect(result.errors).toEqual([expect.objectContaining({ stage: CompileStage.Graphql, line: 11, column: 19 })]);
+      expect(result.errors[0]?.message).toContain('string literal');
+      expect(result.documents).toHaveLength(1);
+    }
+  });
+
+  it('refuses a gql.from call that is not a template tag', async () => {
+    const source = TWO_UPSTREAMS.replace(
+      "const MEMO_LIST = gql.from('memos')`",
+      "const fromMemos = gql.from('memos');\nconst MEMO_LIST = fromMemos`",
+    );
+    const result = await compileTwo(source);
+    expect(result.ok).toBe(false);
+    expect(result.errors).toEqual([expect.objectContaining({ stage: CompileStage.Graphql, line: 11 })]);
+    expect(result.errors[0]?.message).toContain("directly as a template's tag");
+  });
+
+  it('follows gql.from on an aliased and a namespaced gql', async () => {
+    const aliased =
+      "import { gql as g } from 'symphony';\nconst Q = g.from('memos')`query { memos { id } }`;\nexport default function A() { return null; }";
+    const namespaced =
+      "import * as runtime from 'symphony';\nconst Q = runtime.gql.from('memos')`query { memos { id } }`;\nexport default function A() { return null; }";
+    for (const source of [aliased, namespaced]) {
+      // memos is a field of the memo upstream only, so this passes only when the document went there.
+      const result = await compileTwo(source);
+      expect(result.errors).toEqual([]);
+      expect(result.documents).toEqual(['query { memos { id } }']);
+    }
   });
 });

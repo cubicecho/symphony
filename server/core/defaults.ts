@@ -101,12 +101,15 @@ export interface ModuleSettings {
   maxDocuments: number;
   /** Longest module name, in characters. */
   maxNameChars: number;
+  /** Most upstreams one module may read. */
+  maxUpstreams: number;
 }
 
 export const MODULE_DEFAULTS: Readonly<ModuleSettings> = Object.freeze({
   maxSourceChars: 200_000,
   maxDocuments: 20,
   maxNameChars: 80,
+  maxUpstreams: 8,
 });
 
 /** How a page lays out its modules. */

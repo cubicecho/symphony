@@ -2,8 +2,9 @@
  * What a new module's source starts as: a working module over any GraphQL API, since every schema
  * answers introspection. It lists the upstream's object types.
  */
-export const EXAMPLE_SOURCE = `// A module is one TSX file over one upstream. Swap this query for one built from the upstream's
-// schema (Upstreams, then View schema), and the list for whatever shows its data best.
+export const EXAMPLE_SOURCE = `// A module is one TSX file over one or more upstreams. Swap this query for one built from the upstream's
+// schema (Upstreams, then View schema), and the list for whatever shows its data best. A plain gql document
+// goes to the default upstream; one for another of the module's upstreams is written gql.from('<name>')\`…\`.
 import { gql, useQuery } from 'symphony';
 import { CardLayout } from '@/components/card-layout';
 import { List } from '@/components/list';

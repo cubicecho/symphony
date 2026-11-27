@@ -1,7 +1,7 @@
 // Symphony's tables: the upstream APIs it wraps and their cached schemas, the modules written against
 // them, the pages modules are placed on, and the concepts and wiring the unified gateway is composed from.
 import { sql } from 'drizzle-orm';
-import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, check, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import type { ConceptProblem } from '../concepts/validate.ts';
 import type { WiringOverride } from '../gateway/wiring.ts';
 
@@ -43,18 +43,13 @@ export const upstreamSchemas = pgTable('upstream_schemas', {
   fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
-/** A UI module: one TSX file bound to one upstream, and what its last compile made of it. */
+/** A UI module: one TSX file over one or more upstreams (`module_upstreams`), and what its last compile made of it. */
 export const modules = pgTable(
   'modules',
   {
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
     description: text('description').notNull().default(''),
-    /**
-     * The upstream's id. No foreign key: the built-in unified upstream has no row. Removing an upstream deletes its
-     * modules in the same transaction (upstreams/upstream-service.ts).
-     */
-    upstreamId: uuid('upstream_id').notNull(),
     source: text('source').notNull(),
     /** The compiled browser code, or null while the source does not compile. */
     compiled: text('compiled'),
@@ -69,9 +64,26 @@ export const modules = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date()),
   },
+  (table) => [check('ck_modules_status', sql`${table.status} in ('READY', 'FAILED')`)],
+);
+
+/** The upstreams a module reads, in order: position 0 is the default, which a plain `gql` document goes to. */
+export const moduleUpstreams = pgTable(
+  'module_upstreams',
+  {
+    moduleId: uuid('module_id')
+      .notNull()
+      .references(() => modules.id, { onDelete: 'cascade' }),
+    /**
+     * The upstream's id. No foreign key: the built-in unified upstream has no row. Removing an upstream deletes the
+     * modules that list it in the same transaction (upstreams/upstream-service.ts).
+     */
+    upstreamId: uuid('upstream_id').notNull(),
+    position: integer('position').notNull(),
+  },
   (table) => [
-    index('ix_modules_upstream').on(table.upstreamId),
-    check('ck_modules_status', sql`${table.status} in ('READY', 'FAILED')`),
+    primaryKey({ columns: [table.moduleId, table.upstreamId] }),
+    index('ix_module_upstreams_upstream').on(table.upstreamId),
   ],
 );
 
