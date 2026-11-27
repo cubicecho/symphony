@@ -78,11 +78,12 @@ function graphqlRequestOf(body: unknown): GraphQLRequest | null {
  */
 export function createApp({ db, mcpKey, checkDatabase, dist, ...deps }: AppDeps): BuiltApp {
   const fetchDeps = deps.fetch ? { fetch: deps.fetch } : {};
-  // Upstream changes are followed in subscription order: wiring moves overrides first, then the gateway recomposes.
+  // Upstream changes are followed in subscription order: concepts follow renames and wiring moves overrides first,
+  // then the gateway recomposes.
   const upstreamEvents = createEventFeed<UpstreamEvent>('[upstreams]');
   const changes = createEventFeed<SourcesChange>('[gateway]');
   const upstreams = deps.upstreams ?? createUpstreamService({ db, events: upstreamEvents, ...fetchDeps });
-  const concepts = deps.concepts ?? createConceptService({ db, upstreams, changes });
+  const concepts = deps.concepts ?? createConceptService({ db, upstreams, changes, upstreamEvents });
   const wiring = deps.wiring ?? createWiringService({ db, concepts, upstreams, changes, upstreamEvents });
   const unified = createUnifiedService({ upstreams, concepts, wiring, changes, upstreamEvents, ...fetchDeps });
   const services: Services = {

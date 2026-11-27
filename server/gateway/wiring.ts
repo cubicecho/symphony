@@ -20,7 +20,7 @@ import {
   visit,
 } from 'graphql';
 import { z } from 'zod';
-import { type Concept, type ConceptMember, lowerFirst, memberArgumentName } from '../concepts/concept.ts';
+import { type Concept, type ConceptMember, lowerFirst, memberApp, memberArgumentName } from '../concepts/concept.ts';
 import { errorMessage } from '../core/errors.ts';
 import type { MergeKey, Source, SourceRenames } from './sources.ts';
 
@@ -400,7 +400,8 @@ function deriveMemberWiring(
     }
     types[entityType.name] = concept.name;
   }
-  const lookupField = `${memberArgumentName(upstream)}${concept.name}`;
+  // Named after the member, not its upstream, so it keeps its name when the upstream is renamed.
+  const lookupField = `${memberArgumentName(memberApp(member))}${concept.name}`;
   if (rootField.name !== lookupField) {
     const lookupIsTaken = queryFields[lookupField] !== undefined;
     if (lookupIsTaken) {

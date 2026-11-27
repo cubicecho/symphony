@@ -65,14 +65,14 @@ const TYPE_NAME = /^[A-Z][A-Za-z0-9]*$/;
 /** A GraphQL field and variable name. */
 const FIELD_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-/** What splits an upstream name into words: Symphony allows spaces, dots, dashes and underscores. */
+/** What splits a member (upstream) name into words: Symphony allows spaces, dots, dashes and underscores. */
 const WORD_SEPARATOR = /[\s._-]+/;
 
 const sharedField = z.object({ name: z.string().regex(FIELD_NAME), mode: z.literal(FieldMode.Shared) });
 const ownedField = z.object({
   name: z.string().regex(FIELD_NAME),
   mode: z.literal(FieldMode.Owned),
-  /** The member upstream's name. */
+  /** The owning member's name (memberApp). */
   owner: z.string().min(1),
 });
 
@@ -82,8 +82,13 @@ export type ConceptField = z.infer<typeof conceptFieldSchema>;
 
 /** One upstream's part in a concept: its documents, each written against that upstream's schema. */
 export const conceptMemberSchema = z.object({
-  /** The upstream's name. */
+  /** The upstream's name. It follows the upstream through a rename. */
   upstream: z.string().min(1),
+  /**
+   * The member's name in the concept: its `<Name>App` value, its own-fields argument, and what `owner` names. Left
+   * out, it is the upstream's name; renaming the upstream writes the old name here, so the API keeps its names.
+   */
+  app: z.string().min(1).optional(),
   /** Whether a create that names no apps (`in`) writes to this member. Left out, it does. */
   createByDefault: z.boolean().optional(),
   documents: z.object({
@@ -121,9 +126,12 @@ export type Concept = z.infer<typeof conceptSchema>;
  */
 function conceptRuleBreaks(concept: Pick<Concept, 'fields' | 'members'>): string[] {
   const breaks: string[] = [];
-  const memberNames = concept.members.map((member) => member.upstream);
-  for (const name of duplicates(memberNames)) {
+  for (const name of duplicates(concept.members.map((member) => member.upstream))) {
     breaks.push(`The upstream "${name}" is listed as a member more than once.`);
+  }
+  const memberNames = concept.members.map(memberApp);
+  for (const name of duplicates(memberNames)) {
+    breaks.push(`Two members are both called "${name}"; give one an \`app\` name of its own.`);
   }
   for (const name of duplicates(concept.fields.map((field) => field.name))) {
     breaks.push(`The field "${name}" is defined more than once.`);
@@ -143,9 +151,9 @@ function conceptRuleBreaks(concept: Pick<Concept, 'fields' | 'members'>): string
 }
 
 /**
- * Checks that every member's upstream name makes a usable argument and enum value.
+ * Checks that every member's name makes a usable argument and enum value.
  *
- * @param memberNames - The members' upstream names.
+ * @param memberNames - The members' names (memberApp).
  * @returns One message per unusable or clashing name.
  */
 function memberNameBreaks(memberNames: string[]): string[] {
@@ -154,13 +162,13 @@ function memberNameBreaks(memberNames: string[]): string[] {
     const argument = memberArgumentName(name);
     const isUsable = FIELD_NAME.test(argument);
     if (isUsable === false) {
-      breaks.push(`The upstream name "${name}" must start with a letter to name a GraphQL argument.`);
+      breaks.push(`The member name "${name}" must start with a letter to name a GraphQL argument.`);
     } else if (RESERVED_ARGUMENTS.has(argument)) {
-      breaks.push(`The upstream name "${name}" becomes the argument "${argument}", which the mutations use already.`);
+      breaks.push(`The member name "${name}" becomes the argument "${argument}", which the mutations use already.`);
     }
   }
   for (const argument of duplicates(memberNames.map(memberArgumentName))) {
-    breaks.push(`Two members' upstream names both become the argument "${argument}".`);
+    breaks.push(`Two members' names both become the argument "${argument}".`);
   }
   return breaks;
 }
@@ -177,6 +185,16 @@ function duplicates(values: string[]): string[] {
 }
 
 /**
+ * Names a member within its concept: what the API, `owner` and the engine's results call it.
+ *
+ * @param member - The member.
+ * @returns Its `app`, or its upstream's name when it has none.
+ */
+export function memberApp(member: Pick<ConceptMember, 'app' | 'upstream'>): string {
+  return member.app ?? member.upstream;
+}
+
+/**
  * Tells whether a create that names no apps writes to a member.
  *
  * @param member - The member.
@@ -190,12 +208,12 @@ export function createsByDefault(member: Pick<ConceptMember, 'createByDefault'>)
  * Lists the fields one member writes besides the id: every shared field, and the fields it owns.
  *
  * @param concept - The concept.
- * @param upstream - The member's upstream name.
+ * @param app - The member's name (memberApp).
  * @returns Those fields, in definition order.
  */
-export function fieldsWrittenBy(concept: Concept, upstream: string): ConceptField[] {
+export function fieldsWrittenBy(concept: Concept, app: string): ConceptField[] {
   return concept.fields.filter(
-    (field) => field.mode === FieldMode.Shared || (field.mode === FieldMode.Owned && field.owner === upstream),
+    (field) => field.mode === FieldMode.Shared || (field.mode === FieldMode.Owned && field.owner === app),
   );
 }
 
@@ -203,21 +221,21 @@ export function fieldsWrittenBy(concept: Concept, upstream: string): ConceptFiel
  * Lists the fields one member owns.
  *
  * @param concept - The concept.
- * @param upstream - The member's upstream name.
+ * @param app - The member's name (memberApp).
  * @returns Those fields, in definition order.
  */
-export function fieldsOwnedBy(concept: Concept, upstream: string): ConceptField[] {
-  return concept.fields.filter((field) => field.mode === FieldMode.Owned && field.owner === upstream);
+export function fieldsOwnedBy(concept: Concept, app: string): ConceptField[] {
+  return concept.fields.filter((field) => field.mode === FieldMode.Owned && field.owner === app);
 }
 
 /**
- * Splits an upstream name into its words.
+ * Splits a member name into its words.
  *
- * @param upstream - The upstream's name, such as `billing.v2`.
+ * @param name - A member's name, such as `billing.v2`.
  * @returns The non-empty words, such as `['billing', 'v2']`.
  */
-function wordsOf(upstream: string): string[] {
-  return upstream.split(WORD_SEPARATOR).filter((word) => word.length > 0);
+function wordsOf(name: string): string[] {
+  return name.split(WORD_SEPARATOR).filter((word) => word.length > 0);
 }
 
 /**
@@ -233,32 +251,32 @@ function capitalize(word: string): string {
 /**
  * Names the argument a member's own fields travel in: `billing.v2` becomes `billingV2`.
  *
- * @param upstream - The member's upstream name.
+ * @param app - The member's name (memberApp).
  * @returns A camelCase name.
  */
-export function memberArgumentName(upstream: string): string {
-  const [first = '', ...rest] = wordsOf(upstream);
+export function memberArgumentName(app: string): string {
+  const [first = '', ...rest] = wordsOf(app);
   return first.charAt(0).toLowerCase() + first.slice(1) + rest.map(capitalize).join('');
 }
 
 /**
  * Names a member inside generated type names: `billing.v2` becomes `BillingV2`.
  *
- * @param upstream - The member's upstream name.
+ * @param app - The member's name (memberApp).
  * @returns A PascalCase name.
  */
-export function memberTypeName(upstream: string): string {
-  return capitalize(memberArgumentName(upstream));
+export function memberTypeName(app: string): string {
+  return capitalize(memberArgumentName(app));
 }
 
 /**
  * Names a member's value in the concept's `<Name>App` enum: `billing.v2` becomes `BILLING_V2`.
  *
- * @param upstream - The member's upstream name.
+ * @param app - The member's name (memberApp).
  * @returns A SCREAMING_CASE name.
  */
-export function memberEnumValue(upstream: string): string {
-  return wordsOf(upstream)
+export function memberEnumValue(app: string): string {
+  return wordsOf(app)
     .map((word) => word.toUpperCase())
     .join('_');
 }

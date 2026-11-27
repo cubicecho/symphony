@@ -1,5 +1,9 @@
 // The stored concepts. A save is parsed and checked against the members' cached schemas, and refused with every
 // located problem; a stored concept an upstream change has broken since is still listed, with its problems now.
+//
+// Stored definitions follow their upstreams through a rename: each member that names the old upstream is rewritten
+// to the new name, keeping its member name (`app`) so the unified API's names stay put. A removed upstream is left
+// in the definitions, where it shows as a located problem until the user edits the concept.
 import { eq } from 'drizzle-orm';
 import type { GraphQLSchema } from 'graphql';
 import type { z } from 'zod';
@@ -9,7 +13,15 @@ import { type ConceptProblem, validateConcepts } from '../concepts/validate.ts';
 import { UUID_PATTERN } from '../core/consts.ts';
 import { badInput } from '../core/errors.ts';
 import type { EventFeed } from '../core/events.ts';
-import type { ConceptRecord, ConceptService, SourcesChange, Upstream, UpstreamService } from '../core/services.ts';
+import {
+  type ConceptRecord,
+  type ConceptService,
+  type SourcesChange,
+  type Upstream,
+  UpstreamChange,
+  type UpstreamEvent,
+  type UpstreamService,
+} from '../core/services.ts';
 import type { Database } from '../db/client.ts';
 import { concepts } from '../db/schema.ts';
 
@@ -20,6 +32,8 @@ export interface ConceptServiceDeps {
   upstreams: UpstreamService;
   /** Told after every save and remove. */
   changes?: EventFeed<SourcesChange>;
+  /** Followed so definitions move with renamed upstreams. */
+  upstreamEvents?: EventFeed<UpstreamEvent>;
 }
 
 type ConceptRow = typeof concepts.$inferSelect;
@@ -128,9 +142,40 @@ function readDefinition(
 }
 
 /**
- * Builds the concept service.
+ * Rewrites a stored definition's members for a renamed upstream. It works on the JSON as stored, which may no
+ * longer parse, and touches nothing but the members that name the old upstream.
  *
- * @param deps - The database, the upstreams, and the feed told about changes.
+ * @param definition - The definition as stored.
+ * @param from - The upstream's old name.
+ * @param to - Its new name.
+ * @returns The rewritten definition, or null when no member names `from`.
+ */
+export function followUpstreamRename(definition: unknown, from: string, to: string): unknown {
+  const hasMembers =
+    typeof definition === 'object' &&
+    definition !== null &&
+    'members' in definition &&
+    Array.isArray(definition.members);
+  if (hasMembers === false) {
+    return null;
+  }
+  let isChanged = false;
+  const members = (definition.members as unknown[]).map((member) => {
+    const isRenamed = typeof member === 'object' && member !== null && 'upstream' in member && member.upstream === from;
+    if (isRenamed === false) {
+      return member;
+    }
+    isChanged = true;
+    // The member keeps the name it had, which was the old upstream name unless it already had its own.
+    return { app: from, ...member, upstream: to };
+  });
+  return isChanged ? { ...definition, members } : null;
+}
+
+/**
+ * Builds the concept service, and makes stored definitions follow renamed upstreams.
+ *
+ * @param deps - The database, the upstreams, and the feeds.
  * @returns The service.
  */
 export function createConceptService(deps: ConceptServiceDeps): ConceptService {
@@ -163,6 +208,21 @@ export function createConceptService(deps: ConceptServiceDeps): ConceptService {
     const [row] = await db.select().from(concepts).where(eq(column, idOrName));
     return row;
   };
+
+  deps.upstreamEvents?.subscribe(async (event) => {
+    const isRename = event.change === UpstreamChange.Updated && event.name !== event.previousName;
+    if (isRename === false) {
+      return;
+    }
+    const rows = await db.select().from(concepts);
+    for (const row of rows) {
+      const definition = followUpstreamRename(row.definition, event.previousName, event.name);
+      if (definition !== null) {
+        await db.update(concepts).set({ definition, updatedAt: new Date() }).where(eq(concepts.id, row.id));
+        console.log(`[concepts] ${row.name}: member upstream ${event.previousName} renamed to ${event.name}`);
+      }
+    }
+  });
 
   return {
     list: async () => {

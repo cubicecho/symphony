@@ -18,6 +18,7 @@ import {
   FieldMode,
   fieldsOwnedBy,
   ID_FIELD,
+  memberApp,
   PRESENCE_FIELD,
 } from './concept.ts';
 import { mintUuid, normalizeUuid } from './uuid.ts';
@@ -54,7 +55,7 @@ export interface FieldDrift {
 
 /** How one member holds an entity. */
 export interface Presence {
-  /** The member's upstream name. */
+  /** The member's name (memberApp). */
   app: string;
   status: PresenceStatus;
   drift: FieldDrift[];
@@ -68,7 +69,7 @@ export type ConceptView = Record<string, unknown> & { [PRESENCE_FIELD]: Presence
 
 /** What one member did with a write. */
 export interface AppWriteResult {
-  /** The member's upstream name. */
+  /** The member's name (memberApp). */
   app: string;
   ok: boolean;
   error: string | null;
@@ -89,11 +90,11 @@ export interface CreateInput {
   id?: string | undefined;
   /** The shared fields. */
   shared: FieldValues;
-  /** Each member's own fields, by upstream name. */
+  /** Each member's own fields, by member name. */
   own: Readonly<Record<string, FieldValues>>;
-  /** Exactly the upstream names to create it in. Left out, every member that creates by default. */
+  /** Exactly the member names to create it in. Left out, every member that creates by default. */
   in?: readonly string[] | undefined;
-  /** Upstream names to leave out of the default members. Only without `in`. */
+  /** Member names to leave out of the default members. Only without `in`. */
   except?: readonly string[] | undefined;
 }
 
@@ -107,7 +108,7 @@ export interface UpdateInput {
 /** What an attach takes. */
 export interface AttachInput {
   id: string;
-  /** The upstream name to create it in. */
+  /** The member name to create it in. */
   app: string;
   own: FieldValues;
 }
@@ -127,6 +128,8 @@ export interface ConceptEngine {
 /** One member, with its documents parsed once. */
 interface EngineMember {
   member: ConceptMember;
+  /** Its name (memberApp). */
+  app: string;
   documents: MemberDocuments;
 }
 
@@ -187,12 +190,16 @@ function writeResult(id: string, results: AppWriteResult[]): WriteResult {
  */
 export function createConceptEngine(concept: Concept, execute: ExecuteUpstream): ConceptEngine {
   const shared = concept.fields.filter((field) => field.mode === FieldMode.Shared);
-  const members: EngineMember[] = concept.members.map((member) => ({ member, documents: memberDocuments(member) }));
+  const members: EngineMember[] = concept.members.map((member) => ({
+    member,
+    app: memberApp(member),
+    documents: memberDocuments(member),
+  }));
 
-  const memberNamed = (upstream: string): EngineMember => {
-    const found = members.find((one) => one.member.upstream === upstream);
+  const memberNamed = (app: string): EngineMember => {
+    const found = members.find((one) => one.app === app);
     if (found === undefined) {
-      throw badInput(`${upstream} is not a member of ${concept.name}.`);
+      throw badInput(`${app} is not a member of ${concept.name}.`);
     }
     return found;
   };
@@ -254,7 +261,7 @@ export function createConceptEngine(concept: Concept, execute: ExecuteUpstream):
     values: FieldValues,
   ): Promise<AppWriteResult> => {
     const outcome = await run(one, operation, values);
-    const app = one.member.upstream;
+    const { app } = one;
     if (outcome.answered && outcome.root === null) {
       return { app, ok: false, error: `${operation} returned null.` };
     }
@@ -275,7 +282,7 @@ export function createConceptEngine(concept: Concept, execute: ExecuteUpstream):
   const read = async (requestedId: string): Promise<ConceptView | null> => {
     const id = normalizeUuid(requestedId);
     const fetched = await Promise.all(
-      members.map(async (one) => ({ app: one.member.upstream, outcome: await fetchFrom(one, id) })),
+      members.map(async (one) => ({ app: one.app, outcome: await fetchFrom(one, id) })),
     );
     const reference = fetched.find(({ outcome }) => outcome.status === PresenceStatus.Present)?.outcome.data ?? null;
     const presence: Presence[] = fetched.map(({ app, outcome }) => {
@@ -314,10 +321,10 @@ export function createConceptEngine(concept: Concept, execute: ExecuteUpstream):
         'Give `in` or `except`, not both: `in` names the apps exactly, `except` leaves some out of the default ones.',
       );
     }
-    const excluded = new Set((input.except ?? []).map((upstream) => memberNamed(upstream).member.upstream));
+    const excluded = new Set((input.except ?? []).map((app) => memberNamed(app)));
     const chosen =
       input.in === undefined
-        ? members.filter((one) => createsByDefault(one.member) && excluded.has(one.member.upstream) === false)
+        ? members.filter((one) => createsByDefault(one.member) && excluded.has(one) === false)
         : [...new Set(input.in)].map(memberNamed);
     if (chosen.length === 0) {
       throw badInput(`That creates the ${concept.name} in no app at all; name the apps with \`in\`.`);
@@ -332,7 +339,7 @@ export function createConceptEngine(concept: Concept, execute: ExecuteUpstream):
       chosen.map((one) =>
         write(one, ConceptOperation.Create, {
           ...input.shared,
-          ...(input.own[one.member.upstream] ?? {}),
+          ...(input.own[one.app] ?? {}),
           [ID_FIELD]: id,
         }),
       ),
@@ -343,7 +350,7 @@ export function createConceptEngine(concept: Concept, execute: ExecuteUpstream):
   const update = async (input: UpdateInput): Promise<WriteResult> => {
     const id = normalizeUuid(input.id);
     const changes = members.flatMap((one) => {
-      const values = { ...input.shared, ...(input.own[one.member.upstream] ?? {}) };
+      const values = { ...input.shared, ...(input.own[one.app] ?? {}) };
       const definitions = one.documents.update.operation.variableDefinitions ?? [];
       const touches = definitions.some((definition) => {
         const field = boundField(concept, definition.variable.name.value);
@@ -384,7 +391,7 @@ export function createConceptEngine(concept: Concept, execute: ExecuteUpstream):
   };
 
   const removeFrom = async (one: EngineMember, id: string): Promise<AppWriteResult> => {
-    const app = one.member.upstream;
+    const { app } = one;
     const outcome = await run(one, ConceptOperation.Delete, { [ID_FIELD]: id });
     if (outcome.answered) {
       return { app, ok: true, error: null };

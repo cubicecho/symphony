@@ -161,3 +161,9 @@ A concept (`server/concepts/`) is one entity stored in several upstreams, its me
   created in every member whose `createByDefault` is true (the default), minus those in `except`. A concept whose
   members all keep the default lives across all its apps. Giving both arguments, or ending up with no app, is
   `BAD_USER_INPUT` before any app is called.
+- **Member names and upstream renames.** A member's name (`app`, the upstream's name when left out) is what the
+  API uses: the `<Name>App` value, the own-fields argument, the `<app><Name>` lookup field, `owner`, `priority` and
+  the `app` in results. Renaming an upstream rewrites every stored member that names it to the new upstream and
+  writes the old name into `app`, so the unified API keeps its names (`server/gateway/concept-service.ts`; it
+  subscribes before the gateway, so the recompose sees the rewrite). Removing an upstream leaves the definitions
+  alone: the concept stops being served, with a problem placed on the member, until it is edited.
