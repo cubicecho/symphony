@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { Services } from '../core/services.ts';
 import { registerComponentTools } from './component-tools.ts';
 import { registerModuleTools } from './module-tools.ts';
+import { registerProposalTools } from './proposal-tools.ts';
 import { registerResources } from './resources.ts';
 import { registerUnifiedTools } from './unified-tools.ts';
 import { registerUpstreamTools } from './upstream-tools.ts';
@@ -16,6 +17,7 @@ const INSTRUCTIONS = [
   'To write a module: `get_module_contract`, then `list_upstreams` and `get_schema` / `search_schema`, `run_query` to see real data,',
   '`list_components` and `get_component_docs` for the UI, then `submit_module` and resubmit with the returned id until ok is true.',
   'Concepts merge one entity across upstreams into the unified API: `list_concepts`, `save_concept`, `get_wiring`, `get_unified_status`.',
+  'To propose one: `propose_concepts`, refine a draft, then `submit_concept` and resubmit with the returned id until ok is true; a person accepts it.',
 ].join(' ');
 
 /**
@@ -31,6 +33,7 @@ export function createSymphonyMcpServer(services: Services, version: string): Mc
   registerComponentTools(server, services);
   registerModuleTools(server, services);
   registerUnifiedTools(server, services);
+  registerProposalTools(server, services);
   registerResources(server, services);
   return server;
 }

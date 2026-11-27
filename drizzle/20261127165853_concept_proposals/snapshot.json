@@ -1,0 +1,337 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "68088bd0-8298-4219-beda-417583be420b",
+  "prevIds": [
+    "4b741372-7759-4146-af8b-f128efea2ba7"
+  ],
+  "footprints": [
+    {
+      "statementType": "create_table",
+      "statementTarget": [
+        "table",
+        "public",
+        "concept_proposals"
+      ],
+      "writes": [
+        "s|tbl|public.concept_proposals",
+        "n|tbl|public.concept_proposals",
+        "e|tbl|public.concept_proposals",
+        "n|rel|public.concept_proposals",
+        "n|type|public.concept_proposals",
+        "n|rel|public.concept_proposals_pkey"
+      ],
+      "reads": [
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "create_index",
+      "statementTarget": [
+        "index",
+        "public",
+        "concept_proposals",
+        "ix_concept_proposals_status"
+      ],
+      "writes": [
+        "s|idx|public.ix_concept_proposals_status",
+        "n|idx|public.ix_concept_proposals_status",
+        "e|idx|public.ix_concept_proposals_status",
+        "n|rel|public.ix_concept_proposals_status"
+      ],
+      "reads": [
+        "n|tbl|public.concept_proposals",
+        "n|sch|public",
+        "n|col|public.concept_proposals.status"
+      ]
+    },
+    {
+      "statementType": "create_fk",
+      "statementTarget": [
+        "table",
+        "public",
+        "concept_proposals"
+      ],
+      "writes": [
+        "s|fk|public.concept_proposals.concept_proposals_concept_id_concepts_id_fkey",
+        "n|fk|public.concept_proposals.concept_proposals_concept_id_concepts_id_fkey",
+        "e|fk|public.concept_proposals.concept_proposals_concept_id_concepts_id_fkey",
+        "n|con|public.concept_proposals.concept_proposals_concept_id_concepts_id_fkey"
+      ],
+      "reads": [
+        "n|tbl|public.concept_proposals",
+        "n|sch|public",
+        "n|tbl|public.concepts",
+        "n|sch|public",
+        "n|col|public.concept_proposals.concept_id",
+        "n|col|public.concepts.id",
+        "e|uniqueness|public.concepts.id"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "name": "concept_proposals",
+        "isRlsEnabled": false,
+        "entityType": "tables"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "gen_random_uuid()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "name",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "definition",
+        "type": "jsonb",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "status",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "'pending'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "problems",
+        "type": "jsonb",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "'[]'",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "source",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "note",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "reason",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "concept_id",
+        "type": "uuid",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "created_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "updated_at",
+        "type": "timestamp with time zone",
+        "typeSchema": null,
+        "notNull": true,
+        "dimensions": 0,
+        "default": "now()",
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "ix_concept_proposals_status",
+        "nameExplicit": true,
+        "columns": [
+          {
+            "value": "status",
+            "isExpression": false,
+            "asc": true,
+            "nullsFirst": false,
+            "opclass": null
+          }
+        ],
+        "isUnique": false,
+        "where": null,
+        "with": "",
+        "method": "btree",
+        "concurrently": false,
+        "entityType": "indexes"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "concept_proposals_concept_id_concepts_id_fkey",
+        "nameExplicit": false,
+        "columns": [
+          "concept_id"
+        ],
+        "schemaTo": "public",
+        "tableTo": "concepts",
+        "columnsTo": [
+          "id"
+        ],
+        "onUpdate": "NO ACTION",
+        "onDelete": "SET NULL",
+        "entityType": "fks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "concept_proposals_pkey",
+        "columns": [
+          "id"
+        ],
+        "nameExplicit": false,
+        "entityType": "pks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "ck_concept_proposals_status",
+        "value": "\"status\" in ('pending', 'accepted', 'rejected')",
+        "entityType": "checks"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "concept_proposals",
+        "name": "ck_concept_proposals_source",
+        "value": "\"source\" in ('generated', 'agent', 'user')",
+        "entityType": "checks"
+      }
+    }
+  ]
+}

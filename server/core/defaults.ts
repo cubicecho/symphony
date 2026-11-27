@@ -150,3 +150,13 @@ export const GATEWAY_DEFAULTS: Readonly<GatewaySettings> = Object.freeze({
   swapDrainMs: 10_000,
   recomposeDebounceMs: 250,
 });
+
+/** How Symphony drafts concepts from the upstreams' cached schemas (concepts/propose.ts). */
+export interface ProposalSettings {
+  /** Shortest name, in characters, two type names may share once a prefix or suffix is removed, to count as one entity. */
+  minSharedNameChars: number;
+}
+
+export const PROPOSAL_DEFAULTS: Readonly<ProposalSettings> = Object.freeze({
+  minSharedNameChars: 3,
+});

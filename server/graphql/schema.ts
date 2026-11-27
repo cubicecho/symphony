@@ -17,6 +17,7 @@ import {
 } from '../core/services.ts';
 import { UNIFIED_ENDPOINT } from '../gateway/unified-service.ts';
 import type { EffectiveWiring, SourceWiring } from '../gateway/wiring.ts';
+import { PROPOSAL_TYPE_DEFS, withProposalResolvers } from './proposal-schema.ts';
 import { TYPE_DEFS } from './type-defs.ts';
 
 /** What every resolver reads. */
@@ -94,8 +95,8 @@ async function requireModule(ctx: Context, id: string): Promise<ModuleRecord> {
  */
 export function buildSchema(): GraphQLSchema {
   return createSchema<Context>({
-    typeDefs: TYPE_DEFS,
-    resolvers: {
+    typeDefs: [TYPE_DEFS, PROPOSAL_TYPE_DEFS],
+    resolvers: withProposalResolvers({
       Query: {
         upstreams: (_: unknown, _args: unknown, ctx: Context) => ctx.upstreams.list(),
         upstream: (_: unknown, args: { id: string }, ctx: Context) => ctx.upstreams.find(args.id),
@@ -231,6 +232,6 @@ export function buildSchema(): GraphQLSchema {
       Item: {
         module: (item: PageItem, _args: unknown, ctx: Context) => requireModule(ctx, item.moduleId),
       },
-    },
+    }),
   });
 }
