@@ -1,14 +1,39 @@
 // The tools that read an upstream: what there is, its schema, and real data from it.
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { parse } from 'graphql';
 import { z } from 'zod';
 import { MCP_DEFAULTS } from '../core/defaults.ts';
+import { badInput } from '../core/errors.ts';
 import type { Services } from '../core/services.ts';
+import { isSubscription } from '../upstreams/upstream-service.ts';
 import { jsonResult, textResult } from './answers.ts';
 import { printTypeWithNeighbours, searchSchema } from './schema-text.ts';
 import { guard, requireSchema, requireUpstream } from './tool-kit.ts';
 
 /** The `upstream` argument every upstream tool takes. */
 const upstreamArg = z.string().min(1).describe("The upstream's name (from `list_upstreams`), or its id.");
+
+/**
+ * Refuses a subscription: a tool call can't hold a stream open.
+ *
+ * @param query - The document.
+ * @param operationName - Which operation runs, when it holds several.
+ * @throws BAD_USER_INPUT pointing at the snapshot pattern, for a subscription. A document that doesn't parse goes
+ * on, so the upstream service reports where.
+ */
+function refuseSubscription(query: string, operationName: string | undefined): void {
+  let document: ReturnType<typeof parse>;
+  try {
+    document = parse(query);
+  } catch {
+    return;
+  }
+  if (isSubscription(document, operationName)) {
+    throw badInput(
+      "run_query can't run a subscription: a tool call can't hold a stream open. Look in the schema (`search_schema`) for a query that returns what has happened so far, such as a list of events after a sequence number (Task Server's `run_events(runId, afterSeq)`), and run that instead. A module follows the subscription live with `useSubscription`.",
+    );
+  }
+}
 
 /**
  * Registers list_upstreams, get_schema, search_schema and run_query.
@@ -99,7 +124,7 @@ export function registerUpstreamTools(server: McpServer, services: Services): vo
     {
       title: 'Run a GraphQL operation',
       description:
-        "Runs one GraphQL document against an upstream through Symphony (with its stored credentials) and returns the JSON response, `errors` included. Use it to try a query and see real data before writing a module. A mutation changes the upstream's real data: run one only when the person asked for it.",
+        "Runs one GraphQL document against an upstream through Symphony (with its stored credentials) and returns the JSON response, `errors` included. Use it to try a query and see real data before writing a module. It refuses subscriptions: run a query that returns the same events so far instead. A mutation changes the upstream's real data: run one only when the person asked for it.",
       inputSchema: {
         upstream: upstreamArg,
         query: z.string().min(1).describe('The GraphQL document.'),
@@ -112,6 +137,7 @@ export function registerUpstreamTools(server: McpServer, services: Services): vo
       annotations: { readOnlyHint: false, destructiveHint: true, openWorldHint: true },
     },
     guard('run_query', async ({ upstream, query, variables, operation_name }) => {
+      refuseSubscription(query, operation_name);
       const { id } = await requireUpstream(services, upstream);
       const body = await services.upstreams.execute(id, {
         query,
