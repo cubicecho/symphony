@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import { RUNTIME_IMPORTS } from '../../server/modules/allowlist.ts';
 import { compileModule } from '../../server/modules/compile.ts';
 import { type CompileResult, CompileStage } from '../../server/modules/compile-result.ts';
@@ -213,6 +214,22 @@ export default function A() {
     ]);
     expect(result.errors[0]?.message).toContain('RouteLink to "orders" is not a module path');
     expect(result.errors[1]?.message).toContain('Route "orders" in Routes is not a module path');
+  });
+});
+
+describe('the contract', () => {
+  it('compiles the routing example in docs/module-contract.md', async () => {
+    const contract = await readFile(new URL('../../docs/module-contract.md', import.meta.url), 'utf8');
+    const section = contract.slice(contract.indexOf('## Routes inside a module'));
+    const example = /```tsx\n([\s\S]*?)```/.exec(section)?.[1] ?? '';
+    const result = await compileModule({
+      source: example,
+      fileName: 'contract-example',
+      upstreams: [{ name: 'shop', schema: null }],
+      allowedImports: new Set([...allowedImports, '@/components/ui/button']),
+    });
+    expect(example).toContain('<Routes');
+    expect(result.errors).toEqual([]);
   });
 });
 
