@@ -4,8 +4,11 @@
 // a rename (key and `upstream` both) and is deleted when the upstream is, so it never lands on a different upstream
 // that later takes the name. The concept subgraph's override has no upstream row and is only ever cleared by hand.
 import { eq } from 'drizzle-orm';
+import { buildSchema, type GraphQLSchema } from 'graphql';
 import { z } from 'zod';
-import { badInput, notFound } from '../core/errors.ts';
+import type { Concept } from '../concepts/concept.ts';
+import { generateConceptSdl } from '../concepts/generate.ts';
+import { badInput, errorMessage, notFound } from '../core/errors.ts';
 import type { EventFeed } from '../core/events.ts';
 import {
   type ConceptService,
@@ -19,10 +22,12 @@ import {
 import type { Database } from '../db/client.ts';
 import { wiringOverrides } from '../db/schema.ts';
 import { schemasByName } from './concept-service.ts';
+import { type ConflictSource, findFieldConflicts } from './field-conflicts.ts';
 import {
   applyWiringOverrides,
   CONCEPT_SOURCE_NAME,
   deriveWiring,
+  type EffectiveWiring,
   type WiringOverride,
   wiringOverrideSchema,
 } from './wiring.ts';
@@ -63,6 +68,47 @@ function parseOverride(source: string, value: unknown): WiringOverride {
 }
 
 /**
+ * Builds the concept subgraph's schema, without resolvers, to see which fields it gives each concept's type.
+ *
+ * @param concepts - The servable concepts.
+ * @param schemas - Their members' schemas.
+ * @returns The schema, or null when there are no concepts or they cannot be generated together.
+ */
+function conceptSubgraphShape(concepts: readonly Concept[], schemas: ReadonlyMap<string, GraphQLSchema>) {
+  if (concepts.length === 0) {
+    return null;
+  }
+  try {
+    return buildSchema(generateConceptSdl(concepts, schemas));
+  } catch (error) {
+    // The unified service reports why when it builds the real subgraph; conflicts just leave it out.
+    console.warn('[wiring]', `the concept subgraph was left out of the field conflicts: ${errorMessage(error)}`);
+    return null;
+  }
+}
+
+/**
+ * Lists every source the gateway will compose, with its effective wiring, for findFieldConflicts.
+ *
+ * @param schemas - Each upstream's cached schema, by name.
+ * @param concepts - The servable concepts.
+ * @param wiring - The effective wiring.
+ * @returns The sources.
+ */
+function conflictSources(
+  schemas: ReadonlyMap<string, GraphQLSchema>,
+  concepts: readonly Concept[],
+  wiring: readonly EffectiveWiring[],
+): ConflictSource[] {
+  const wiringOf = (name: string) => wiring.find((one) => one.upstream === name);
+  const sources = [...schemas].map(([name, schema]) => ({ name, schema, wiring: wiringOf(name) }));
+  const conceptShape = conceptSubgraphShape(concepts, schemas);
+  return conceptShape === null
+    ? sources
+    : [...sources, { name: CONCEPT_SOURCE_NAME, schema: conceptShape, wiring: wiringOf(CONCEPT_SOURCE_NAME) }];
+}
+
+/**
  * Builds the wiring service, and makes overrides follow their upstreams.
  *
  * @param deps - The database, concepts, upstreams and feeds.
@@ -80,9 +126,14 @@ export function createWiringService(deps: WiringServiceDeps): WiringService {
     const servable = records.flatMap((record) =>
       record.concept !== null && record.problems.length === 0 ? [record.concept] : [],
     );
-    const derived = deriveWiring(servable, schemasByName(upstreams));
-    const overrides = rows.map((row) => row.override);
-    return { wiring: applyWiringOverrides(derived.wiring, overrides), problems: derived.problems };
+    const schemas = schemasByName(upstreams);
+    const derived = deriveWiring(servable, schemas);
+    const wiring = applyWiringOverrides(
+      derived.wiring,
+      rows.map((row) => row.override),
+    );
+    const conflicts = findFieldConflicts(servable, conflictSources(schemas, servable, wiring));
+    return { wiring, problems: derived.problems, conflicts };
   };
 
   const find = async (source: string) => {

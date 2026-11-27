@@ -5,6 +5,7 @@ import type { Concept } from '../concepts/concept.ts';
 import type { ConceptProblem } from '../concepts/validate.ts';
 import type { StoredCompileError, StoredHeader } from '../db/schema.ts';
 import type { CompositionIssue } from '../gateway/compose.ts';
+import type { FieldConflict } from '../gateway/field-conflicts.ts';
 import type { Source } from '../gateway/sources.ts';
 import type { EffectiveWiring, WiringProblem } from '../gateway/wiring.ts';
 import type { CompileResult } from '../modules/compile-result.ts';
@@ -271,6 +272,8 @@ export interface SourcesChange {
 export interface WiringState {
   wiring: EffectiveWiring[];
   problems: WiringProblem[];
+  /** Every field of a merged type that more than one source provides, and which source serves it. */
+  conflicts: FieldConflict[];
 }
 
 /** The generated wiring of the servable concepts, with users' overrides applied. */
@@ -354,6 +357,8 @@ export interface UnifiedStatus {
   sources: UnifiedSource[];
   /** As of the last composition attempt. */
   problems: UnifiedProblem[];
+  /** Field conflicts the gateway resolves by priority or not at all (isWarned), as of the last attempt. */
+  warnings: FieldConflict[];
   /** Null once a composition succeeds. */
   lastError: UnifiedError | null;
 }

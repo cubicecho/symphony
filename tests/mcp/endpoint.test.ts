@@ -285,7 +285,7 @@ describe('/mcp', () => {
 
   it('reads the wiring and the unified status', async () => {
     const wiring = JSON.parse(textOf(await client.callTool({ name: 'get_wiring', arguments: {} })));
-    expect(wiring).toEqual({ wiring: [], problems: [] });
+    expect(wiring).toEqual({ wiring: [], problems: [], conflicts: [] });
     const none = await client.callTool({ name: 'get_wiring', arguments: { source: FAKE_UPSTREAM } });
     expect(none.isError).toBe(true);
     const cleared = JSON.parse(

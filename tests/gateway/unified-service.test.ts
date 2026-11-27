@@ -69,7 +69,7 @@ function createWorld(upstreams: Upstream[]) {
       world.mostAtOnce = Math.max(world.mostAtOnce, running);
       await new Promise((resolve) => setTimeout(resolve, 20));
       running -= 1;
-      return { wiring: [], problems: [] };
+      return { wiring: [], problems: [], conflicts: [] };
     },
     find: unused,
     setOverride: unused,

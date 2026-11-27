@@ -150,6 +150,21 @@ export const TYPE_DEFS = /* GraphQL */ `
     column: Int
   }
 
+  "A field of a merged type that more than one source provides. Warnings never stop anything being served."
+  type FieldConflictWarning {
+    "The concept whose type it is; null for a type only wiring overrides merge."
+    concept: String
+    type: String!
+    field: String!
+    "Every source that provides it: upstream names, or symphony_concepts."
+    sources: [String!]!
+    "The member the concept's priority picks for this field; null when none is set."
+    priority: String
+    "The source it is served from; null when the gateway picks one."
+    servedBy: String
+    message: String!
+  }
+
   "One entity read and written across several upstreams, stored as data and served by the unified API."
   type Concept {
     id: ID!
@@ -160,6 +175,8 @@ export const TYPE_DEFS = /* GraphQL */ `
     servable: Boolean!
     "Checked against the members' schemas as they are now: an upstream change can break a saved concept."
     problems: [ConceptProblem!]!
+    "Fields of its type that several sources provide and no definition default settles: set priority to pick one."
+    warnings: [FieldConflictWarning!]!
     "ISO 8601."
     createdAt: String!
     "ISO 8601."
@@ -279,6 +296,8 @@ export const TYPE_DEFS = /* GraphQL */ `
     sources: [UnifiedSource!]!
     "As of the last composition attempt."
     problems: [UnifiedProblem!]!
+    "Field conflicts, as of the last composition attempt."
+    warnings: [FieldConflictWarning!]!
     "The last failed composition; null once one succeeds."
     lastError: UnifiedError
   }

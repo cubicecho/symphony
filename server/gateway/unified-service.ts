@@ -29,6 +29,7 @@ import { HttpStatus } from '../core/wire.ts';
 import { createSecretResolver } from '../upstreams/secrets.ts';
 import { type CompositionIssue, composeSupergraph, type Supergraph, SupergraphCompositionError } from './compose.ts';
 import { schemasByName } from './concept-service.ts';
+import { type FieldConflict, hiddenFieldsOf, isWarned } from './field-conflicts.ts';
 import { createUnifiedGateway, type UnifiedGateway } from './gateway.ts';
 import type { Source } from './sources.ts';
 import { CONCEPT_SOURCE_NAME, type EffectiveWiring } from './wiring.ts';
@@ -78,6 +79,7 @@ export interface UnifiedGatewayService extends UnifiedService {
 interface Assembly {
   sources: Source[];
   problems: UnifiedProblem[];
+  warnings: FieldConflict[];
 }
 
 /** A GraphQL name, which a subgraph name must be to appear in the supergraph as it is. */
@@ -158,6 +160,7 @@ export function createUnifiedService(
     composedAt: null,
     sources: [],
     problems: [],
+    warnings: [],
     lastError: null,
   };
   /** Symphony's name for each subgraph of the served supergraph. */
@@ -261,7 +264,17 @@ export function createUnifiedService(
         problems.push(...error.problems.map(conceptProblem));
       }
     }
-    return { sources, problems };
+    // A field is hidden only for a server that made it into the composition, so a source left out above never takes
+    // a field away from the others.
+    const included = new Set(sources.map((source) => source.name));
+    const settled = wiringState.conflicts.filter(
+      (conflict) => conflict.servedBy !== null && included.has(conflict.servedBy),
+    );
+    return {
+      sources: sources.map((source) => ({ ...source, hiddenFields: hiddenFieldsOf(settled, source.name) })),
+      problems,
+      warnings: wiringState.conflicts.filter(isWarned),
+    };
   };
 
   /**
@@ -271,10 +284,12 @@ export function createUnifiedService(
    */
   const composeOnce = async (why: string): Promise<void> => {
     let problems: UnifiedProblem[] = [];
+    let warnings: FieldConflict[] = [];
     let names = new Map<string, string>();
     try {
       const assembly = await assemble();
       problems = assembly.problems;
+      warnings = assembly.warnings;
       if (assembly.sources.length === 0) {
         throw new Error('There is nothing to compose: no upstream has a cached schema, and no concept can be served.');
       }
@@ -298,6 +313,7 @@ export function createUnifiedService(
         composedAt: new Date(),
         sources: sources.map((source) => ({ name: sourceNames.get(source.name) ?? source.name, kind: source.kind })),
         problems,
+        warnings,
         lastError: null,
       };
       console.log(LOG_TAG, `composed ${sources.length} source(s) (${why})`);
@@ -310,7 +326,7 @@ export function createUnifiedService(
           : [];
       const lastError: UnifiedError = { message: errorMessage(error), issues, at: new Date() };
       const state = gateway === null ? UnifiedState.Failed : UnifiedState.Ready;
-      status = { ...status, state, problems, lastError };
+      status = { ...status, state, problems, warnings, lastError };
       console.warn(
         LOG_TAG,
         `composition failed (${why}); ${gateway === null ? 'nothing is served' : 'the last good supergraph keeps serving'}: ${lastError.message}`,

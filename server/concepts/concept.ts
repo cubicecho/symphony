@@ -59,6 +59,12 @@ const RESERVED_FIELD_NAMES: ReadonlyMap<string, string> = new Map([
   [PRESENCE_FIELD, 'the generated concept type uses it'],
 ]);
 
+/** Fields no priority may name, with why. */
+const PRIORITY_RESERVED_FIELDS: ReadonlyMap<string, string> = new Map([
+  [ID_FIELD, 'is the merge key, which every source serves'],
+  [PRESENCE_FIELD, 'is served by the concept subgraph alone'],
+]);
+
 /** A GraphQL type name: the concept's name prefixes every generated type. */
 const TYPE_NAME = /^[A-Z][A-Za-z0-9]*$/;
 
@@ -85,7 +91,8 @@ export const conceptMemberSchema = z.object({
   /** The upstream's name. It follows the upstream through a rename. */
   upstream: z.string().min(1),
   /**
-   * The member's name in the concept: its `<Name>App` value, its own-fields argument, and what `owner` names. Left
+   * The member's name in the concept: its `<Name>App` value, its own-fields argument, what `owner` and `priority`
+   * name. Left
    * out, it is the upstream's name; renaming the upstream writes the old name here, so the API keeps its names.
    */
   app: z.string().min(1).optional(),
@@ -110,6 +117,11 @@ export const conceptSchema = z
       .refine((name) => RESERVED_CONCEPT_NAMES.has(name) === false, 'That name is taken by the subgraph itself.'),
     fields: z.array(conceptFieldSchema).min(1),
     members: z.array(conceptMemberSchema).min(1),
+    /**
+     * Which member serves a field of the merged type that several sources provide: field name (after renames) to
+     * member name. A field left out is served as server/gateway/field-conflicts.ts says.
+     */
+    priority: z.record(z.string().regex(FIELD_NAME), z.string().min(1)).optional(),
   })
   .superRefine((concept, context) => {
     for (const message of conceptRuleBreaks(concept)) {
@@ -124,7 +136,7 @@ export type Concept = z.infer<typeof conceptSchema>;
  * @param concept - A concept whose shape already parsed.
  * @returns One message per broken rule.
  */
-function conceptRuleBreaks(concept: Pick<Concept, 'fields' | 'members'>): string[] {
+function conceptRuleBreaks(concept: Pick<Concept, 'fields' | 'members' | 'priority'>): string[] {
   const breaks: string[] = [];
   for (const name of duplicates(concept.members.map((member) => member.upstream))) {
     breaks.push(`The upstream "${name}" is listed as a member more than once.`);
@@ -147,6 +159,29 @@ function conceptRuleBreaks(concept: Pick<Concept, 'fields' | 'members'>): string
     }
   }
   breaks.push(...memberNameBreaks(memberNames));
+  breaks.push(...priorityBreaks(concept.priority ?? {}, memberNames));
+  return breaks;
+}
+
+/**
+ * Checks what can be checked of a priority without schemas: the field is not the subgraph's own, and the app is a
+ * member. Whether that member provides the field is checked against its schema (field-conflicts.ts).
+ *
+ * @param priority - Field name to member name.
+ * @param memberNames - The members' names (memberApp).
+ * @returns One message per broken entry.
+ */
+function priorityBreaks(priority: Readonly<Record<string, string>>, memberNames: string[]): string[] {
+  const breaks: string[] = [];
+  for (const [field, app] of Object.entries(priority)) {
+    const reservedBecause = PRIORITY_RESERVED_FIELDS.get(field);
+    if (reservedBecause !== undefined) {
+      breaks.push(`priority.${field}: "${field}" ${reservedBecause}, so no member can be picked for it.`);
+    }
+    if (memberNames.includes(app) === false) {
+      breaks.push(`priority.${field}: "${app}" is not a member. The members: ${memberNames.join(', ')}.`);
+    }
+  }
   return breaks;
 }
 

@@ -24,6 +24,7 @@ import {
 } from '../core/services.ts';
 import type { Database } from '../db/client.ts';
 import { concepts } from '../db/schema.ts';
+import { priorityProblems } from './field-conflicts.ts';
 
 /** What the service talks to. */
 export interface ConceptServiceDeps {
@@ -120,7 +121,9 @@ function checkConcept(concept: Concept, upstreams: readonly Upstream[]): Concept
   const documentProblems = validateConcepts([concept], schemasByName(upstreams)).filter(
     (problem) => problem.member === null || flagged.has(problem.member) === false,
   );
-  return [...missing, ...documentProblems];
+  const problems = [...missing, ...documentProblems];
+  // A priority is checked against the member's entity type, which needs documents that read.
+  return problems.length > 0 ? problems : priorityProblems(concept, schemasByName(upstreams));
 }
 
 /**

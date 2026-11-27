@@ -33,7 +33,7 @@ async function post(path: string, query: string, variables: Record<string, unkno
 }
 
 const STATUS =
-  '{ unifiedStatus { state endpoint sources { name kind } problems { kind message } lastError { message } } }';
+  '{ unifiedStatus { state endpoint sources { name kind } problems { kind message } warnings { field } lastError { message } } }';
 
 beforeAll(async () => {
   opened = await openTestDatabase();
@@ -147,7 +147,8 @@ describe('the unified API', () => {
 
 describe('concepts across upstream renames and removals', () => {
   const RENAMED = 'notes';
-  const CONCEPT = '{ concept(idOrName: "Note") { definition servable problems { member message } } }';
+  const CONCEPT =
+    '{ concept(idOrName: "Note") { definition servable problems { member message } warnings { field } } }';
 
   /**
    * Finds the memo upstream's id, under its old name or its new one.
@@ -175,6 +176,8 @@ describe('concepts across upstream renames and removals', () => {
     expect(renamed.body.data.updateUpstream).toEqual({ name: RENAMED });
     const { body } = await post('/graphql', CONCEPT);
     expect(body.data.concept.servable).toBe(true);
+    // Its one field is shared, so the concept subgraph serves it by default: nothing to warn about.
+    expect(body.data.concept.warnings).toEqual([]);
     const [member] = noteConcept().members as object[];
     expect(body.data.concept.definition.members).toEqual([{ ...member, app: MEMO_UPSTREAM, upstream: RENAMED }]);
     await unified.whenIdle();
@@ -186,7 +189,7 @@ describe('concepts across upstream renames and removals', () => {
       data: { createNote: { partial: false, results: [{ app: MEMO_UPSTREAM, ok: true }] } },
     });
     const status = await post('/graphql', STATUS);
-    expect(status.body.data.unifiedStatus.problems).toEqual([]);
+    expect(status.body.data.unifiedStatus).toMatchObject({ problems: [], warnings: [] });
   });
 
   it('keeps the concept when its upstream is removed, with a problem placed on the member', async () => {

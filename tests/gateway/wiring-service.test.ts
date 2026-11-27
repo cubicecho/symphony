@@ -41,7 +41,7 @@ afterAll(() => opened.close());
 describe('wiring', () => {
   it('has no wiring while nothing generates or overrides any', async () => {
     const fresh = createWiringService({ db: opened.db, concepts, upstreams });
-    expect(await fresh.effective()).toEqual({ wiring: [], problems: [] });
+    expect(await fresh.effective()).toEqual({ wiring: [], problems: [], conflicts: [] });
   });
 
   it("derives wiring for a servable concept's members", async () => {
