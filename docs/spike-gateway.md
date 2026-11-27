@@ -151,3 +151,13 @@ here needs it.
   sources, which is how the `members` clash fails. The fixtures use `String!` for `slug` on both sides. `ID!` against
   `String!` was not tested, but it is expected to fail the same way. Real upstreams may need a type-coercing
   transform.
+
+## Concepts
+
+A concept (`server/concepts/`) is one entity stored in several upstreams, its members. The concept subgraph serves
+`<name>(id:)` and four mutations per concept, and the gateway merges it with the members on `id`.
+
+- **Where a create lands.** `create<Name>(in:, except:)`: `in` names the apps exactly. Left out, the entity is
+  created in every member whose `createByDefault` is true (the default), minus those in `except`. A concept whose
+  members all keep the default lives across all its apps. Giving both arguments, or ending up with no app, is
+  `BAD_USER_INPUT` before any app is called.

@@ -60,6 +60,16 @@ function idArgument(args: Record<string, unknown>): string | undefined {
 }
 
 /**
+ * Reads a list argument of app names, which the enum has already turned into upstream names.
+ *
+ * @param value - The argument, which may be absent or null.
+ * @returns The names, or undefined when it was left out.
+ */
+function listArgument(value: unknown): string[] | undefined {
+  return Array.isArray(value) ? value.map(String) : undefined;
+}
+
+/**
  * Reads an `id: ID!` argument, which GraphQL has already made sure is there.
  *
  * @param args - The field's arguments.
@@ -96,7 +106,8 @@ function conceptResolvers(
           id: idArgument(args),
           shared: fieldValues(args.shared),
           own: ownByUpstream(args),
-          in: Array.isArray(args.in) ? args.in.map(String) : [],
+          in: listArgument(args.in),
+          except: listArgument(args.except),
         }),
       [names.update]: (_parent, args) =>
         engine.update({ id: requiredIdArgument(args), shared: fieldValues(args.shared), own: ownByUpstream(args) }),

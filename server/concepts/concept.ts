@@ -35,7 +35,7 @@ export const ID_VARIABLE = 'id';
 export const PRESENCE_FIELD = 'presence';
 
 /** Argument names the generated mutations take for themselves, so no member's argument may use them. */
-const RESERVED_ARGUMENTS = new Set([ID_FIELD, 'shared', 'in', 'app', 'own']);
+const RESERVED_ARGUMENTS = new Set([ID_FIELD, 'shared', 'in', 'except', 'app', 'own']);
 
 /** Concept names whose generated query or types would clash with the subgraph's own (generate.ts) or a scalar. */
 const RESERVED_CONCEPT_NAMES = new Set([
@@ -84,6 +84,8 @@ export type ConceptField = z.infer<typeof conceptFieldSchema>;
 export const conceptMemberSchema = z.object({
   /** The upstream's name. */
   upstream: z.string().min(1),
+  /** Whether a create that names no apps (`in`) writes to this member. Left out, it does. */
+  createByDefault: z.boolean().optional(),
   documents: z.object({
     /** A query with one root field: the entity, or null when this upstream has none with the id. */
     fetch: z.string().min(1),
@@ -172,6 +174,16 @@ function memberNameBreaks(memberNames: string[]): string[] {
 function duplicates(values: string[]): string[] {
   const repeated = values.filter((value, index) => values.indexOf(value) !== index);
   return [...new Set(repeated)];
+}
+
+/**
+ * Tells whether a create that names no apps writes to a member.
+ *
+ * @param member - The member.
+ * @returns Its `createByDefault`, true when left out.
+ */
+export function createsByDefault(member: Pick<ConceptMember, 'createByDefault'>): boolean {
+  return member.createByDefault ?? true;
 }
 
 /**

@@ -14,6 +14,7 @@ import {
   type Concept,
   type ConceptMember,
   ConceptOperation,
+  createsByDefault,
   FieldMode,
   fieldsOwnedBy,
   ID_FIELD,
@@ -90,8 +91,10 @@ export interface CreateInput {
   shared: FieldValues;
   /** Each member's own fields, by upstream name. */
   own: Readonly<Record<string, FieldValues>>;
-  /** The upstream names to create it in. */
-  in: readonly string[];
+  /** Exactly the upstream names to create it in. Left out, every member that creates by default. */
+  in?: readonly string[] | undefined;
+  /** Upstream names to leave out of the default members. Only without `in`. */
+  except?: readonly string[] | undefined;
 }
 
 /** What an update takes. Fields left out are kept; a null clears. */
@@ -298,9 +301,33 @@ export function createConceptEngine(concept: Concept, execute: ExecuteUpstream):
     return { [ID_FIELD]: id, ...sharedValues, [PRESENCE_FIELD]: presence };
   };
 
+  /**
+   * Picks the members a create writes to: `in` exactly, or every member that creates by default but `except`.
+   *
+   * @param input - The create.
+   * @returns The members, each once.
+   * @throws BAD_USER_INPUT for both `in` and `except`, an unknown name, or no member at all.
+   */
+  const createTargets = (input: CreateInput): EngineMember[] => {
+    if (input.in !== undefined && input.except !== undefined) {
+      throw badInput(
+        'Give `in` or `except`, not both: `in` names the apps exactly, `except` leaves some out of the default ones.',
+      );
+    }
+    const excluded = new Set((input.except ?? []).map((upstream) => memberNamed(upstream).member.upstream));
+    const chosen =
+      input.in === undefined
+        ? members.filter((one) => createsByDefault(one.member) && excluded.has(one.member.upstream) === false)
+        : [...new Set(input.in)].map(memberNamed);
+    if (chosen.length === 0) {
+      throw badInput(`That creates the ${concept.name} in no app at all; name the apps with \`in\`.`);
+    }
+    return chosen;
+  };
+
   const create = async (input: CreateInput): Promise<WriteResult> => {
+    const chosen = createTargets(input);
     const id = input.id === undefined ? mintUuid() : normalizeUuid(input.id);
-    const chosen = [...new Set(input.in)].map(memberNamed);
     const results = await Promise.all(
       chosen.map((one) =>
         write(one, ConceptOperation.Create, {

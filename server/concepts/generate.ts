@@ -320,7 +320,8 @@ function generateConcept(concept: Concept, schemas: ReadonlyMap<string, GraphQLS
     `${ID_FIELD}: ID`,
     ...(hasShared ? [sharedArg] : []),
     ...own.map((member) => member.createArg),
-    `in: [${names.app}!]!`,
+    `in: [${names.app}!]`,
+    `except: [${names.app}!]`,
   ];
   const updateArgs = [
     `${ID_FIELD}: ID!`,
@@ -334,7 +335,7 @@ function generateConcept(concept: Concept, schemas: ReadonlyMap<string, GraphQLS
       `  "A ${concept.name} by its id, read from every upstream. Null when none has it."\n  ${names.query}(${ID_FIELD}: ID!): ${names.type}`,
     ],
     mutations: [
-      `  "Creates a ${concept.name} in the chosen upstreams at once, under the UUID \`${ID_FIELD}\` or a new one."\n  ${names.create}(${argList(createArgs)}): ${names.writeResult}!`,
+      `  "Creates a ${concept.name} in several upstreams at once, under the UUID \`${ID_FIELD}\` or a new one: exactly the ones in \`in\`, or else every upstream that creates by default, but those in \`except\`."\n  ${names.create}(${argList(createArgs)}): ${names.writeResult}!`,
       `  "Changes shared fields in every upstream, and own fields in their owner."\n  ${names.update}(${argList(updateArgs)}): ${names.writeResult}!`,
       `  "Creates an existing ${concept.name} in one more upstream, copying its shared fields. \`own\` holds that upstream's own fields."\n  ${names.attach}(${ID_FIELD}: ID!, app: ${names.app}!, own: JSON): ${names.writeResult}!`,
       `  "Deletes a ${concept.name} from every upstream. One that has none already counts as done."\n  ${names.delete}(${ID_FIELD}: ID!): ${names.writeResult}!`,

@@ -52,7 +52,8 @@ describe('generateConceptSdl', () => {
       'id: ID',
       'shared: TeamShared!',
       'billing: TeamBillingOwn',
-      'in: [TeamApp!]!',
+      'in: [TeamApp!]',
+      'except: [TeamApp!]',
     ]);
     expect(signature('updateTeam')).toEqual(['id: ID!', 'shared: TeamSharedPatch', 'billing: TeamBillingOwnPatch']);
     expect(signature('attachTeam')).toEqual(['id: ID!', 'app: TeamApp!', 'own: JSON']);

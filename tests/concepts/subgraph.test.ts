@@ -154,6 +154,54 @@ describe('create', () => {
   });
 });
 
+describe('create without `in`', () => {
+  const CREATE_BY_DEFAULT = /* GraphQL */ `
+    mutation ($id: ID, $shared: TeamShared!, $billing: TeamBillingOwn, $in: [TeamApp!], $except: [TeamApp!]) {
+      createTeam(id: $id, shared: $shared, billing: $billing, in: $in, except: $except) { id results { app ok } }
+    }
+  `;
+  const core = { id: CORE_ID, shared: { slug: 'core', name: 'Core' }, billing: { plan: 'PRO' } };
+
+  it('creates in every member when none opts out', async () => {
+    const data = await run(CREATE_BY_DEFAULT, core);
+    expect(data.createTeam).toEqual({
+      id: CORE_ID,
+      results: [
+        { app: 'directory', ok: true },
+        { app: 'billing', ok: true },
+      ],
+    });
+  });
+
+  it('leaves out the members in `except`', async () => {
+    const data = await run(CREATE_BY_DEFAULT, { ...core, except: ['BILLING'] });
+    expect(data.createTeam).toEqual({ id: CORE_ID, results: [{ app: 'directory', ok: true }] });
+    expect(upstreams.accounts.size).toBe(0);
+  });
+
+  it('leaves out members that opt out with createByDefault, unless `in` names them', async () => {
+    const concept = teamConcept();
+    const [directory, billing] = concept.members;
+    const optedOut = { ...concept, members: [directory, { ...billing, createByDefault: false }] };
+    schema = createConceptSubgraph([conceptSchema.parse(optedOut)], CONCEPT_SCHEMAS, upstreams.execute);
+    const byDefault = await run(CREATE_BY_DEFAULT, core);
+    expect(byDefault.createTeam).toEqual({ id: CORE_ID, results: [{ app: 'directory', ok: true }] });
+    const named = await run(CREATE_BY_DEFAULT, { ...core, id: NOBODY_ID, in: ['BILLING'] });
+    expect(named.createTeam).toEqual({ id: NOBODY_ID, results: [{ app: 'billing', ok: true }] });
+  });
+
+  it.each([
+    ['both `in` and `except`', { in: ['DIRECTORY'], except: ['BILLING'] }, /not both/],
+    ['an `except` of every member', { except: ['DIRECTORY', 'BILLING'] }, /name the apps with `in`/],
+    ['an empty `in`', { in: [] }, /name the apps with `in`/],
+  ])('refuses %s before any upstream is called', async (_name, choice, message) => {
+    const result = await graphql({ schema, source: CREATE_BY_DEFAULT, variableValues: { ...core, ...choice } });
+    expect(result.errors?.[0]?.extensions.code).toBe('BAD_USER_INPUT');
+    expect(result.errors?.[0]?.message).toMatch(message);
+    expect(upstreams.calls).toEqual([]);
+  });
+});
+
 describe('ids that are not UUIDs', () => {
   const NOT_A_UUID = 'core';
   const operations: [string, string, Record<string, unknown>][] = [
