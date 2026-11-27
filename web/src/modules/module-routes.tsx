@@ -67,13 +67,14 @@ export function Routes({ routes, fallback = NotFound }: RoutesProps) {
   }
   return (
     <RouteMatchContext.Provider value={match}>
-      <RouteBody key={match.route} view={view} />
+      <RouteBody key={path} view={view} />
     </RouteMatchContext.Provider>
   );
 }
 
 /**
- * Calls one route's view as its own component, keyed by route, so its hooks stay its own.
+ * Calls one route's view as its own component, keyed by path, so its hooks stay its own and each subpage
+ * (`/orders/o1`, then `/orders/o2`) starts with fresh state.
  *
  * @param props - The view.
  * @param props.view - What the route draws.
