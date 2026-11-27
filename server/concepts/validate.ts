@@ -37,6 +37,7 @@ import {
   FieldMode,
   ID_FIELD,
   ID_VARIABLE,
+  memberApp,
 } from './concept.ts';
 
 /** One problem with a concept, placed in the member document it is about when it has a place. */
@@ -217,9 +218,9 @@ function bindingProblems(
         const message = `$${name} is required but binds nothing: no concept field is called "${name}". Rename it after a field, or make it nullable.`;
         problems.push({ message, ...place });
       }
-    } else if (field.mode === FieldMode.Owned && field.owner !== member.upstream) {
+    } else if (field.mode === FieldMode.Owned && field.owner !== memberApp(member)) {
       problems.push({
-        message: `$${name} binds "${name}", which ${field.owner} owns, not ${member.upstream}.`,
+        message: `$${name} binds "${name}", which ${field.owner} owns, not ${memberApp(member)}.`,
         ...place,
       });
     } else {

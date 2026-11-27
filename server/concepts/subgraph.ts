@@ -2,7 +2,7 @@
 import { GraphQLScalarType, type GraphQLSchema, valueFromASTUntyped } from 'graphql';
 import { createSchema } from 'graphql-yoga';
 import { badInput } from '../core/errors.ts';
-import { type Concept, ID_FIELD, memberArgumentName, memberEnumValue } from './concept.ts';
+import { type Concept, ID_FIELD, memberApp, memberArgumentName, memberEnumValue } from './concept.ts';
 import { createConceptEngine, type ExecuteUpstream, type FieldValues, isRecord } from './engine.ts';
 import { conceptNames, generateConceptSdl, SERVED_CONCEPTS_FIELD } from './generate.ts';
 import { type ConceptProblem, validateConcepts } from './validate.ts';
@@ -60,6 +60,16 @@ function idArgument(args: Record<string, unknown>): string | undefined {
 }
 
 /**
+ * Reads a list argument of apps, which the enum has already turned into member names.
+ *
+ * @param value - The argument, which may be absent or null.
+ * @returns The names, or undefined when it was left out.
+ */
+function listArgument(value: unknown): string[] | undefined {
+  return Array.isArray(value) ? value.map(String) : undefined;
+}
+
+/**
  * Reads an `id: ID!` argument, which GraphQL has already made sure is there.
  *
  * @param args - The field's arguments.
@@ -82,24 +92,25 @@ function conceptResolvers(
 ): { app: Record<string, string>; query: FieldResolvers; mutation: FieldResolvers } {
   const names = conceptNames(concept);
   const engine = createConceptEngine(concept, execute);
-  const upstreams = concept.members.map((member) => member.upstream);
-  // Each member's own fields arrive in an argument named after it; the engine keys them by upstream name.
-  const ownByUpstream = (args: Record<string, unknown>) =>
-    Object.fromEntries(upstreams.map((upstream) => [upstream, fieldValues(args[memberArgumentName(upstream)])]));
+  const apps = concept.members.map(memberApp);
+  // Each member's own fields arrive in an argument named after it; the engine keys them by member name.
+  const ownByApp = (args: Record<string, unknown>) =>
+    Object.fromEntries(apps.map((app) => [app, fieldValues(args[memberArgumentName(app)])]));
   return {
-    // The enum's values resolve to upstream names, so the engine never sees `BILLING`.
-    app: Object.fromEntries(upstreams.map((upstream) => [memberEnumValue(upstream), upstream])),
+    // The enum's values resolve to member names, so the engine never sees `BILLING`.
+    app: Object.fromEntries(apps.map((app) => [memberEnumValue(app), app])),
     query: { [names.query]: (_parent, args) => engine.read(requiredIdArgument(args)) },
     mutation: {
       [names.create]: (_parent, args) =>
         engine.create({
           id: idArgument(args),
           shared: fieldValues(args.shared),
-          own: ownByUpstream(args),
-          in: Array.isArray(args.in) ? args.in.map(String) : [],
+          own: ownByApp(args),
+          in: listArgument(args.in),
+          except: listArgument(args.except),
         }),
       [names.update]: (_parent, args) =>
-        engine.update({ id: requiredIdArgument(args), shared: fieldValues(args.shared), own: ownByUpstream(args) }),
+        engine.update({ id: requiredIdArgument(args), shared: fieldValues(args.shared), own: ownByApp(args) }),
       [names.attach]: (_parent, args) => {
         const own = args.own ?? {};
         if (isRecord(own) === false) {

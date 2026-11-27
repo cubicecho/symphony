@@ -23,6 +23,7 @@ import {
   fieldsOwnedBy,
   ID_FIELD,
   lowerFirst,
+  memberApp,
   memberArgumentName,
   memberEnumValue,
   memberTypeName,
@@ -87,9 +88,9 @@ export interface ConceptNames {
   update: string;
   attach: string;
   delete: string;
-  /** `TeamBillingOwn`: the create input of one member's owned fields. */
-  own: (upstream: string) => string;
-  ownPatch: (upstream: string) => string;
+  /** `TeamBillingOwn`: the create input of one member's owned fields, by its name (memberApp). */
+  own: (app: string) => string;
+  ownPatch: (app: string) => string;
 }
 
 /**
@@ -112,8 +113,8 @@ export function conceptNames(concept: Concept): ConceptNames {
     update: `update${name}`,
     attach: `attach${name}`,
     delete: `delete${name}`,
-    own: (upstream) => `${name}${memberTypeName(upstream)}Own`,
-    ownPatch: (upstream) => `${name}${memberTypeName(upstream)}OwnPatch`,
+    own: (app) => `${name}${memberTypeName(app)}Own`,
+    ownPatch: (app) => `${name}${memberTypeName(app)}OwnPatch`,
   };
 }
 
@@ -208,7 +209,8 @@ function inputLine(name: string, type: TypeNode, isRequired: boolean): string {
 
 /** What the generator knows about one member of a concept. */
 interface MemberPlan {
-  upstream: string;
+  /** Its name (memberApp). */
+  app: string;
   documents: MemberDocuments;
   schema: GraphQLSchema;
 }
@@ -229,9 +231,9 @@ interface ConceptSdl {
  */
 function ownInputs(concept: Concept, member: MemberPlan): { types: string[]; createArg: string; updateArg: string } {
   const names = conceptNames(concept);
-  const prefix = `${concept.name}${memberTypeName(member.upstream)}`;
+  const prefix = `${concept.name}${memberTypeName(member.app)}`;
   const copies: CopiedTypes = new Map();
-  const owned = fieldsOwnedBy(concept, member.upstream);
+  const owned = fieldsOwnedBy(concept, member.app);
   const lines = (operation: ConceptOperation, isPatch: boolean) =>
     owned.flatMap((field) => {
       const definition = bindingOf(concept, member.documents, operation, field);
@@ -243,21 +245,21 @@ function ownInputs(concept: Concept, member: MemberPlan): { types: string[]; cre
     });
   const createLines = lines(ConceptOperation.Create, false);
   const updateLines = lines(ConceptOperation.Update, true);
-  const argument = memberArgumentName(member.upstream);
+  const argument = memberArgumentName(member.app);
   const types: string[] = [];
   let createArg = '';
   let updateArg = '';
   if (createLines.length > 0) {
     types.push(
-      `"${member.upstream}'s own fields, on create."\ninput ${names.own(member.upstream)} {\n${createLines.join('\n')}\n}`,
+      `"${member.app}'s own fields, on create."\ninput ${names.own(member.app)} {\n${createLines.join('\n')}\n}`,
     );
-    createArg = `${argument}: ${names.own(member.upstream)}`;
+    createArg = `${argument}: ${names.own(member.app)}`;
   }
   if (updateLines.length > 0) {
     types.push(
-      `"${member.upstream}'s own fields, on update. Leave one out to keep it."\ninput ${names.ownPatch(member.upstream)} {\n${updateLines.join('\n')}\n}`,
+      `"${member.app}'s own fields, on update. Leave one out to keep it."\ninput ${names.ownPatch(member.app)} {\n${updateLines.join('\n')}\n}`,
     );
-    updateArg = `${argument}: ${names.ownPatch(member.upstream)}`;
+    updateArg = `${argument}: ${names.ownPatch(member.app)}`;
   }
   return { types: [...types, ...copies.values()], createArg, updateArg };
 }
@@ -276,7 +278,7 @@ function generateConcept(concept: Concept, schemas: ReadonlyMap<string, GraphQLS
     if (schema === undefined) {
       throw new Error(`There is no schema for ${member.upstream}. Run validateConcepts first.`);
     }
-    return { upstream: member.upstream, documents: memberDocuments(member), schema };
+    return { app: memberApp(member), documents: memberDocuments(member), schema };
   });
   const shared = concept.fields.filter((field) => field.mode === FieldMode.Shared);
   // Shared types are built-in scalars and agree across members (validate.ts), so any create says them.
@@ -297,7 +299,7 @@ function generateConcept(concept: Concept, schemas: ReadonlyMap<string, GraphQLS
   });
   const patchLines = shared.map((field) => `  ${field.name}: ${typeOf(field)}`);
   const own = members.map((member) => ownInputs(concept, member));
-  const appValues = concept.members.map((member) => `  ${memberEnumValue(member.upstream)}`);
+  const appValues = concept.members.map((member) => `  ${memberEnumValue(memberApp(member))}`);
 
   const types = [
     `"The upstreams a ${concept.name} can live in."\nenum ${names.app} {\n${appValues.join('\n')}\n}`,
@@ -320,7 +322,8 @@ function generateConcept(concept: Concept, schemas: ReadonlyMap<string, GraphQLS
     `${ID_FIELD}: ID`,
     ...(hasShared ? [sharedArg] : []),
     ...own.map((member) => member.createArg),
-    `in: [${names.app}!]!`,
+    `in: [${names.app}!]`,
+    `except: [${names.app}!]`,
   ];
   const updateArgs = [
     `${ID_FIELD}: ID!`,
@@ -334,7 +337,7 @@ function generateConcept(concept: Concept, schemas: ReadonlyMap<string, GraphQLS
       `  "A ${concept.name} by its id, read from every upstream. Null when none has it."\n  ${names.query}(${ID_FIELD}: ID!): ${names.type}`,
     ],
     mutations: [
-      `  "Creates a ${concept.name} in the chosen upstreams at once, under the UUID \`${ID_FIELD}\` or a new one."\n  ${names.create}(${argList(createArgs)}): ${names.writeResult}!`,
+      `  "Creates a ${concept.name} in several upstreams at once, under the UUID \`${ID_FIELD}\` or a new one: exactly the ones in \`in\`, or else every upstream that creates by default, but those in \`except\`."\n  ${names.create}(${argList(createArgs)}): ${names.writeResult}!`,
       `  "Changes shared fields in every upstream, and own fields in their owner."\n  ${names.update}(${argList(updateArgs)}): ${names.writeResult}!`,
       `  "Creates an existing ${concept.name} in one more upstream, copying its shared fields. \`own\` holds that upstream's own fields."\n  ${names.attach}(${ID_FIELD}: ID!, app: ${names.app}!, own: JSON): ${names.writeResult}!`,
       `  "Deletes a ${concept.name} from every upstream. One that has none already counts as done."\n  ${names.delete}(${ID_FIELD}: ID!): ${names.writeResult}!`,

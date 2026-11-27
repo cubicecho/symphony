@@ -26,6 +26,11 @@ interface SourceBase {
   name: string;
   renames?: SourceRenames;
   mergeKeys?: readonly MergeKey[];
+  /**
+   * Fields this source leaves out after renames, by unified type name, because another source serves them
+   * (field-conflicts.ts). The source still has them; the gateway just never asks it for them.
+   */
+  hiddenFields?: Readonly<Record<string, readonly string[]>>;
   /** Added server-side to every request the gateway sends this source, e.g. a resolved secret. */
   headers?: Readonly<Record<string, string>>;
 }

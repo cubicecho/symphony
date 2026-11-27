@@ -37,10 +37,21 @@ describe('conceptSchema', () => {
     const messages = result.error?.issues.map((issue) => issue.message) ?? [];
     expect(messages).toEqual([
       'The upstream "directory" is listed as a member more than once.',
+      'Two members are both called "directory"; give one an `app` name of its own.',
       'No field may be called "id": every concept has it already, as the entity\'s Symphony UUID.',
       'The field "tax" is owned by "payroll", which is not a member.',
-      'Two members\' upstream names both become the argument "directory".',
+      'Two members\' names both become the argument "directory".',
     ]);
+  });
+
+  it('names a member by its app when it has one, so owner names the app and not the upstream', () => {
+    const concept = teamConcept();
+    const [directory, billing] = concept.members;
+    const renamed = { ...concept, members: [directory, { ...billing, app: 'billing', upstream: 'billing-v2' }] };
+    expect(conceptSchema.safeParse(renamed).success).toBe(true);
+    const clash = { ...concept, members: [directory, { ...billing, app: 'directory' }] };
+    const messages = conceptSchema.safeParse(clash).error?.issues.map((issue) => issue.message) ?? [];
+    expect(messages).toContain('Two members are both called "directory"; give one an `app` name of its own.');
   });
 
   it('has no key mode any more: the id is implicit', () => {
@@ -53,7 +64,7 @@ describe('conceptSchema', () => {
     const concept = teamConcept();
     const renamed = { ...concept, members: [{ ...concept.members[0], upstream: 'id' }, concept.members[1]] };
     const messages = conceptSchema.safeParse(renamed).error?.issues.map((issue) => issue.message) ?? [];
-    expect(messages).toContain('The upstream name "id" becomes the argument "id", which the mutations use already.');
+    expect(messages).toContain('The member name "id" becomes the argument "id", which the mutations use already.');
   });
 });
 

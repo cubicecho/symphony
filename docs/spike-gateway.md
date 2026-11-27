@@ -162,8 +162,37 @@ here needs it.
   adapter is needed. Move to 3.x once `transport-rest` is built on `transport-common@2`.
 - **Merged types must be shareable.** Composition is Federation 2 semantics. Every type that is merged is marked
   `@shareable` in every source, which also hides genuine conflicts on non-key fields (two sources both claiming
-  `name` with different meanings). Renames are the only guard against that.
+  `name` with different meanings). Symphony now finds those and serves each from one source (see Concepts).
 - **Shared fields need compatible types.** Federation composition compares the types of a field resolved by several
   sources, which is how the `members` clash fails. The fixtures use `String!` for `slug` on both sides. `ID!` against
   `String!` was not tested, but it is expected to fail the same way. Real upstreams may need a type-coercing
   transform.
+
+## Concepts
+
+A concept (`server/concepts/`) is one entity stored in several upstreams, its members. The concept subgraph serves
+`<name>(id:)` and four mutations per concept, and the gateway merges it with the members on `id`.
+
+- **Where a create lands.** `create<Name>(in:, except:)`: `in` names the apps exactly. Left out, the entity is
+  created in every member whose `createByDefault` is true (the default), minus those in `except`. A concept whose
+  members all keep the default lives across all its apps. Giving both arguments, or ending up with no app, is
+  `BAD_USER_INPUT` before any app is called.
+- **Field conflicts and `priority`.** `server/gateway/field-conflicts.ts` finds every non-key field of a merged
+  type that more than one source provides once renames apply. Each is served from one source, first rule that
+  applies: the concept's `priority: { <field>: <member> }`; for a shared field, the concept subgraph (its value is
+  the first member, in definition order, that has the entity, which is also what drift is measured against); for an
+  owned field, its owner. The other sources' copies are removed from their subgraph before composing
+  (`hiddenFields` on a source, a `mapSchema` transform after the renames). Mesh's filter transform was not used
+  because it marks fields `@inaccessible`, which Federation applies to the whole supergraph, and `@override` takes
+  one `from` subgraph per field and needs the sanitized subgraph names. A conflict nothing settles is left to the
+  gateway. Conflicts settled by a priority, and those nothing settles, are reported as `warnings` on the concept
+  (`Concept.warnings`, `get_concept`) and in `unifiedStatus.warnings` / `get_unified_status`, with the type, field,
+  sources, `priority` and `servedBy`. Warnings never stop anything being served. Saving checks that a priority's
+  member gives the type that field, as its generated wiring renames it. Serving a shared field from the concept
+  subgraph costs a fetch of every member when a query starts from a member's root field.
+- **Member names and upstream renames.** A member's name (`app`, the upstream's name when left out) is what the
+  API uses: the `<Name>App` value, the own-fields argument, the `<app><Name>` lookup field, `owner`, `priority` and
+  the `app` in results. Renaming an upstream rewrites every stored member that names it to the new upstream and
+  writes the old name into `app`, so the unified API keeps its names (`server/gateway/concept-service.ts`; it
+  subscribes before the gateway, so the recompose sees the rewrite). Removing an upstream leaves the definitions
+  alone: the concept stops being served, with a problem placed on the member, until it is edited.

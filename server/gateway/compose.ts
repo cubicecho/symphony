@@ -5,6 +5,7 @@ import {
   type SubgraphConfig,
   type SubgraphTransform,
 } from '@graphql-mesh/fusion-composition';
+import { MapperKind, mapSchema } from '@graphql-tools/utils';
 import { loadOpenAPISubgraph } from '@omnigraph/openapi';
 import {
   buildSchema,
@@ -93,6 +94,22 @@ function renameTransform(renames: SourceRenames): SubgraphTransform {
 }
 
 /**
+ * Builds the transform that removes the fields another source serves, so the gateway reads each from one source.
+ * Mesh's filter transform is not used: it marks fields `@inaccessible`, which Federation applies to the field in the
+ * whole supergraph, not just in this source.
+ *
+ * @param hidden - Field names after renames, by type name after renames.
+ * @returns The transform.
+ */
+function hideFieldsTransform(hidden: Readonly<Record<string, readonly string[]>>): SubgraphTransform {
+  return (schema) =>
+    mapSchema(schema, {
+      [MapperKind.OBJECT_FIELD]: (field, fieldName, typeName) =>
+        hidden[typeName]?.includes(fieldName) === true ? null : field,
+    });
+}
+
+/**
  * Builds the transform that tells the gateway how to merge a source's entities with other sources'.
  * Each merged type is marked shareable, because merged sources resolve the same fields (`slug`, `name`).
  *
@@ -166,6 +183,7 @@ async function toSubgraph(source: Source, context: LoadContext): Promise<Subgrap
   }
   const transforms = [
     ...(source.renames ? [renameTransform(source.renames)] : []),
+    ...(source.hiddenFields ? [hideFieldsTransform(source.hiddenFields)] : []),
     ...(source.mergeKeys?.length ? [mergeTransform(source.mergeKeys)] : []),
   ];
   const url = source.kind === 'graphql' ? source.endpoint : undefined;

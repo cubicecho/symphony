@@ -222,13 +222,20 @@ export function createFakeServices(
       reject: unused,
     },
     wiring: {
-      effective: async () => ({ wiring: [], problems: [] }),
+      effective: async () => ({ wiring: [], problems: [], conflicts: [] }),
       find: async () => null,
       setOverride: unused,
       clearOverride: async () => false,
     },
     unified: {
-      status: () => ({ state: UnifiedState.Starting, composedAt: null, sources: [], problems: [], lastError: null }),
+      status: () => ({
+        state: UnifiedState.Starting,
+        composedAt: null,
+        sources: [],
+        problems: [],
+        warnings: [],
+        lastError: null,
+      }),
     },
   };
   return { services, calls };

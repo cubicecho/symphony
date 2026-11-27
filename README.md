@@ -65,7 +65,8 @@ server/   Express + graphql-yoga + drizzle (PGlite in DATA_DIR, or Postgres via 
   modules/    compile pipeline (babel parse → import allowlist → gql validation → esbuild) and storage
   pages/      pages and placed items
   concepts/   concepts as data: validation, the generated concept subgraph and its engine
-  gateway/    the unified API: concept and wiring storage, composition, the hot-swapped gateway at /unified/graphql
+  gateway/    the unified API: concept and wiring storage, field conflicts, composition, the hot-swapped gateway at
+              /unified/graphql (docs/spike-gateway.md, "Concepts")
   mcp/        the agents' door (MCP SDK, stateless Streamable HTTP)
   catalog/    cubeui component catalogue and docs (synced by `npm run catalog:sync`)
 web/      Vite + React + TanStack Router/Query + cubeui; web/src/modules is the module runtime and loader

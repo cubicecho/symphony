@@ -15,6 +15,7 @@ import {
   type UnifiedStatus,
   type Upstream,
 } from '../core/services.ts';
+import { conceptWarnings } from '../gateway/field-conflicts.ts';
 import { UNIFIED_ENDPOINT } from '../gateway/unified-service.ts';
 import type { EffectiveWiring, SourceWiring } from '../gateway/wiring.ts';
 import { PROPOSAL_TYPE_DEFS, withProposalResolvers } from './proposal-schema.ts';
@@ -185,6 +186,7 @@ export function buildSchema(): GraphQLSchema {
       JSON: JsonScalar,
       Concept: {
         servable: (concept: ConceptRecord) => concept.problems.length === 0,
+        warnings: (concept: ConceptRecord, _args: unknown, ctx: Context) => conceptWarnings(ctx.wiring, concept.name),
         createdAt: (concept: ConceptRecord) => concept.createdAt.toISOString(),
         updatedAt: (concept: ConceptRecord) => concept.updatedAt.toISOString(),
       },

@@ -3,6 +3,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { notFound } from '../core/errors.ts';
 import type { ConceptRecord, Services } from '../core/services.ts';
+import { conceptWarnings } from '../gateway/field-conflicts.ts';
 import { UNIFIED_ENDPOINT } from '../gateway/unified-service.ts';
 import { CONCEPT_SOURCE_NAME } from '../gateway/wiring.ts';
 import { didYouMean, jsonResult } from './answers.ts';
@@ -88,16 +89,15 @@ export function registerUnifiedTools(server: McpServer, services: Services): voi
     {
       title: 'Get a concept',
       description:
-        "Returns one concept: its definition as saved, and the problems that stop it being served now, each placed in a member's document (`member`, `operation`, `line`, `column`) when it has a place. An upstream's schema change can break a saved concept.",
+        "Returns one concept: its definition as saved, the problems that stop it being served now, each placed in a member's document (`member`, `operation`, `line`, `column`) when it has a place, and its `warnings`: fields of its type that several sources provide (`sources`), with the member its `priority` picks and the source that serves it (`servedBy`, null when the gateway picks). An upstream's schema change can break a saved concept.",
       inputSchema: { concept: conceptArg },
       annotations: { readOnlyHint: true },
     },
-    guard('get_concept', async ({ concept }) =>
-      jsonResult(
-        conceptAnswer(await requireConcept(services, concept)),
-        'The definition is long; read it in Symphony.',
-      ),
-    ),
+    guard('get_concept', async ({ concept }) => {
+      const found = await requireConcept(services, concept);
+      const warnings = await conceptWarnings(services.wiring, found.name);
+      return jsonResult({ ...conceptAnswer(found), warnings }, 'The definition is long; read it in Symphony.');
+    }),
   );
 
   server.registerTool(
@@ -109,7 +109,9 @@ export function registerUnifiedTools(server: McpServer, services: Services): voi
       inputSchema: {
         definition: z
           .record(z.string(), z.unknown())
-          .describe('The concept as JSON: its name, fields and members, each member with its four documents.'),
+          .describe(
+            'The concept as JSON: its name, fields and members, each member with its four documents and optionally `app` (its name in the API) and `createByDefault` (false to leave it out of creates that name no apps), plus an optional `priority` map of field name to the member that serves it.',
+          ),
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true },
     },
@@ -194,7 +196,7 @@ export function registerUnifiedTools(server: McpServer, services: Services): voi
     'get_unified_status',
     {
       title: 'Get unified API status',
-      description: `Says whether the unified API at ${UNIFIED_ENDPOINT} is serving (\`starting\`, \`ready\` or \`failed\`), when it was last composed, its sources, the concept and wiring problems that left things out, and the last failed composition with its issues. A failed recompose keeps the last good one serving.`,
+      description: `Says whether the unified API at ${UNIFIED_ENDPOINT} is serving (\`starting\`, \`ready\` or \`failed\`), when it was last composed, its sources, the concept and wiring problems that left things out, the field-conflict \`warnings\` (a field several sources provide, and which serves it), and the last failed composition with its issues. A failed recompose keeps the last good one serving.`,
       annotations: { readOnlyHint: true },
     },
     guard('get_unified_status', async () =>
