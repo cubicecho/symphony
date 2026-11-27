@@ -9,7 +9,7 @@ import type { UnifiedGatewayService } from '../../server/gateway/unified-service
 import { UNIFIED_UPSTREAM_ID, UNIFIED_UPSTREAM_NAME } from '../../server/gateway/unified-upstream.ts';
 import { createApp } from '../../server/http/app.ts';
 import { openTestDatabase } from '../db.ts';
-import { createMemoUpstream, MEMO_UPSTREAM, MEMO_URL, noteConcept } from '../fixtures/memo-upstream.ts';
+import { createMemoUpstream, MEMO_ID, MEMO_UPSTREAM, MEMO_URL, noteConcept } from '../fixtures/memo-upstream.ts';
 
 /** A concept entity's id: a UUID. No such note exists; reading it answers null. */
 const NOTE_ID = '3f2b8c1e-9d4a-4c6b-8e2f-1a7d5c9b0e44';
@@ -123,7 +123,7 @@ describe('the unified upstream', () => {
 
   it('answers through the proxy in-process, checking requests against its schema first', async () => {
     const answered = await post(`/proxy/${UNIFIED_UPSTREAM_ID}`, '{ memos { id title } }');
-    expect(answered.body).toEqual({ data: { memos: [{ id: 'm1', title: 'First' }] } });
+    expect(answered.body).toEqual({ data: { memos: [{ id: MEMO_ID, title: 'First' }] } });
     const refused = await post(`/proxy/${UNIFIED_UPSTREAM_ID}`, '{ memos { nope } }');
     expect(refused.body.errors[0].extensions.code).toBe(ErrorCode.BadUserInput);
   });

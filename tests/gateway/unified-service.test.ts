@@ -20,7 +20,7 @@ import {
   UNIFIED_ENDPOINT,
   type UnifiedGatewayService,
 } from '../../server/gateway/unified-service.ts';
-import { cachedUpstream, createMemoUpstream, MEMO_SDL, MEMO_UPSTREAM } from '../fixtures/memo-upstream.ts';
+import { cachedUpstream, createMemoUpstream, MEMO_ID, MEMO_SDL, MEMO_UPSTREAM } from '../fixtures/memo-upstream.ts';
 
 /** Clashes with the memo upstream's `Memo.id: ID!`, so the two can't compose. */
 const CLASHING_SDL = 'type Memo { id: Int! }\ntype Query { otherMemo: Memo }';
@@ -159,7 +159,7 @@ describe('the unified service', () => {
     expect(status.sources).toEqual([{ name: MEMO_UPSTREAM, kind: 'graphql' }]);
     expect(status.composedAt).toBeInstanceOf(Date);
     const { body } = await post(url, '{ memos { id title } }');
-    expect(body).toEqual({ data: { memos: [{ id: 'm1', title: 'First' }] } });
+    expect(body).toEqual({ data: { memos: [{ id: MEMO_ID, title: 'First' }] } });
     expect(built.memo.lastHeaders?.get('authorization')).toBe('Bearer memo-secret');
   });
 
@@ -191,7 +191,7 @@ describe('the unified service', () => {
     expect(status.lastError?.issues.length).toBeGreaterThan(0);
     expect(status.sources).toEqual([{ name: MEMO_UPSTREAM, kind: 'graphql' }]);
     const { body } = await post(url, '{ memos { id } }');
-    expect(body).toEqual({ data: { memos: [{ id: 'm1' }] } });
+    expect(body).toEqual({ data: { memos: [{ id: MEMO_ID }] } });
   });
 
   it('leaves out an upstream whose header secret is not set, as a source problem', async () => {

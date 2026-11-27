@@ -8,7 +8,7 @@ import type { UnifiedGatewayService } from '../../server/gateway/unified-service
 import { CONCEPT_SOURCE_NAME } from '../../server/gateway/wiring.ts';
 import { createApp } from '../../server/http/app.ts';
 import { openTestDatabase } from '../db.ts';
-import { createMemoUpstream, MEMO_UPSTREAM, MEMO_URL, noteConcept } from '../fixtures/memo-upstream.ts';
+import { createMemoUpstream, MEMO_ID, MEMO_UPSTREAM, MEMO_URL, noteConcept } from '../fixtures/memo-upstream.ts';
 
 let opened: OpenedDatabase;
 let unified: UnifiedGatewayService;
@@ -76,7 +76,7 @@ describe('the unified API', () => {
       lastError: null,
     });
     const served = await post('/unified/graphql', '{ memos { id title } }');
-    expect(served.body).toEqual({ data: { memos: [{ id: 'm1', title: 'First' }] } });
+    expect(served.body).toEqual({ data: { memos: [{ id: MEMO_ID, title: 'First' }] } });
   });
 
   it('refuses a concept that does not fit, with located problems', async () => {
@@ -103,7 +103,7 @@ describe('the unified API', () => {
     ]);
     const served = await post('/unified/graphql', '{ concepts memos { id __typename } }');
     // The generated wiring renamed the member's Memo to Note, so the upstream's memos are the concept's entity.
-    expect(served.body).toEqual({ data: { concepts: ['Note'], memos: [{ id: 'm1', __typename: 'Note' }] } });
+    expect(served.body).toEqual({ data: { concepts: ['Note'], memos: [{ id: MEMO_ID, __typename: 'Note' }] } });
   });
 
   it('lists concepts and the effective wiring over the admin API', async () => {

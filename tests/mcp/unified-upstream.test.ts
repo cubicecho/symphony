@@ -8,7 +8,7 @@ import type { UnifiedGatewayService } from '../../server/gateway/unified-service
 import { UNIFIED_UPSTREAM_ID, UNIFIED_UPSTREAM_NAME } from '../../server/gateway/unified-upstream.ts';
 import { createApp } from '../../server/http/app.ts';
 import { openTestDatabase } from '../db.ts';
-import { createMemoUpstream, MEMO_UPSTREAM, MEMO_URL } from '../fixtures/memo-upstream.ts';
+import { createMemoUpstream, MEMO_ID, MEMO_UPSTREAM, MEMO_URL } from '../fixtures/memo-upstream.ts';
 
 const KEY = 'test-key';
 
@@ -79,6 +79,6 @@ describe('the upstream tools and the unified upstream', () => {
 
   it('run a query on it', async () => {
     const body = JSON.parse(await call('run_query', { upstream: UNIFIED_UPSTREAM_NAME, query: '{ memos { id } }' }));
-    expect(body).toEqual({ data: { memos: [{ id: 'm1' }] } });
+    expect(body).toEqual({ data: { memos: [{ id: MEMO_ID }] } });
   });
 });

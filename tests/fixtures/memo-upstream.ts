@@ -5,6 +5,9 @@ import { createSchema, createYoga } from 'graphql-yoga';
 import type { Upstream } from '../../server/core/services.ts';
 
 /** The memo upstream's SDL. */
+/** The fixture's one memo: a UUID, as a concept entity's id must be. */
+export const MEMO_ID = '0b7e3f2a-5c1d-4e8b-9a6f-2d4c8e1b3a57';
+
 export const MEMO_SDL = /* GraphQL */ `
   type Memo {
     id: ID!
@@ -52,7 +55,7 @@ export interface MemoUpstream {
  * @returns The upstream and a fetch that answers every URL with it.
  */
 export function createMemoUpstream(): MemoUpstream {
-  const memos = new Map([['m1', { id: 'm1', title: 'First' }]]);
+  const memos = new Map([[MEMO_ID, { id: MEMO_ID, title: 'First' }]]);
   const resolvers = {
     Query: {
       memo: (_: unknown, args: { id: string }) => memos.get(args.id) ?? null,
