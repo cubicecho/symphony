@@ -69,13 +69,12 @@ export default function RecentOrders() {
 
 ## The `symphony` runtime
 
-| Export        | Signature                                                                                                                                                                         | What it does                                                                                                                                                                                                         |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gql`         | ``gql`…` → string``, ``gql.from('<upstream>')`…` → document``                                                                                                                     | Marks a GraphQL document so the compiler finds and validates it. `gql` returns the text, for the default upstream; `gql.from` returns a document for the named upstream, which the hooks send there.                 |
-| `useQuery`    | `useQuery<T>(document, { variables?, refetchIntervalSeconds?, enabled? }?)` → `{ data: T \| undefined, error: Error \| null, isLoading, isPending, isError: boolean, refetch() }` | Runs a query against the document's upstream. Cached per document and variables. The result can be passed straight to `LoadState`'s `query`, which draws loading and failure and renders nothing once data is there. |
-| `useMutation` | `useMutation<T, V>(document)` → `{ mutate(variables?: V): Promise<T>, data: T \| undefined, error: Error \| null, isPending: boolean }`                                           | Runs a mutation against the document's upstream. When it succeeds, every query of this module is fetched again.                                                                                                      |
-
-| `useSubscription` | `useSubscription<T>(document, { variables?, enabled?, maxEvents?, onEvent? }?)` → `{ events: T[], latest: T \| undefined, status, error: Error \| null }` | Follows a subscription on the document's upstream. `events` holds the `data` of the latest `maxEvents` (default 100) events, oldest first; `onEvent(data)` is called as each arrives. `status` is `'idle'` (not enabled), `'connecting'`, `'open'`, `'complete'` or `'error'`. |
+| Export            | Signature                                                                                                                                                                         | What it does                                                                                                                                                                                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `gql`             | ``gql`…` → string``, ``gql.from('<upstream>')`…` → document``                                                                                                                     | Marks a GraphQL document so the compiler finds and validates it. `gql` returns the text, for the default upstream; `gql.from` returns a document for the named upstream, which the hooks send there.                                                                           |
+| `useQuery`        | `useQuery<T>(document, { variables?, refetchIntervalSeconds?, enabled? }?)` → `{ data: T \| undefined, error: Error \| null, isLoading, isPending, isError: boolean, refetch() }` | Runs a query against the document's upstream. Cached per document and variables. The result can be passed straight to `LoadState`'s `query`, which draws loading and failure and renders nothing once data is there.                                                           |
+| `useMutation`     | `useMutation<T, V>(document)` → `{ mutate(variables?: V): Promise<T>, data: T \| undefined, error: Error \| null, isPending: boolean }`                                           | Runs a mutation against the document's upstream. When it succeeds, every query of this module is fetched again.                                                                                                                                                                |
+| `useSubscription` | `useSubscription<T>(document, { variables?, enabled?, maxEvents?, onEvent? }?)` → `{ events: T[], latest: T \| undefined, status, error: Error \| null }`                         | Follows a subscription on the document's upstream. `events` holds the `data` of the latest `maxEvents` (default 100) events, oldest first; `onEvent(data)` is called as each arrives. `status` is `'idle'` (not enabled), `'connecting'`, `'open'`, `'complete'` or `'error'`. |
 
 An upstream's GraphQL errors arrive as `error`, with the upstream's messages joined.
 
@@ -129,11 +128,14 @@ function RunLog({ runId }: { runId: string | null }) {
 ```
 
 - **Reconnects.** A dropped stream reconnects with backoff (1 s, doubling up to 30 s) and `status` goes back to
-  `'connecting'` with the reason in `error`. One the upstream completed (`'complete'`) or Symphony refused
-  (`'error'`, for an invalid document, say) is not tried again.
+  `'connecting'` with the reason in `error`. The wait starts over only once an event arrives. One the upstream
+  completed (`'complete'`) or Symphony refused (`'error'`, for an invalid document, say) is not tried again.
 - **Events are kept across a reconnect.** An upstream that replays what it said so far (like `runEvents`) sends
-  those events again after one, so key what you render by a field such as `seq`.
-- **An event's GraphQL errors** arrive as `error` without closing the stream.
+  those events again after one, so key what you render by a field such as `seq`. `maxEvents: 0` keeps none, for a
+  module that only reads `latest` or `onEvent`; a negative or fractional `maxEvents` is an `'error'`.
+- **An event's GraphQL errors** arrive as `error` without closing the stream. So does a throw in `onEvent`.
+- **Only a subscription streams.** The runtime asks for `text/event-stream`; a query or mutation is always answered
+  once, as JSON, whatever the request accepts.
 - **Limits.** Symphony closes a stream that has had no event for a while (5 minutes by default; the module then
   reconnects), refuses one over its stream limits, and ends one whose event is too large.
 - **Not through `unified`.** The built-in unified API doesn't stream subscriptions yet: tag the document
