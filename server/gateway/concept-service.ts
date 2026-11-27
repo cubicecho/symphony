@@ -44,7 +44,7 @@ export function schemasByName(upstreams: readonly Upstream[]): Map<string, Graph
  * @param definition - Untrusted JSON.
  * @returns Its `name` when that is a string, otherwise an empty string.
  */
-function nameOf(definition: unknown): string {
+export function nameOf(definition: unknown): string {
   const hasName = typeof definition === 'object' && definition !== null && 'name' in definition;
   return hasName && typeof definition.name === 'string' ? definition.name : '';
 }
@@ -116,7 +116,7 @@ function checkConcept(concept: Concept, upstreams: readonly Upstream[]): Concept
  * @param upstreams - Every upstream.
  * @returns The concept (null when it does not parse) and its problems.
  */
-function readDefinition(
+export function readDefinition(
   definition: unknown,
   upstreams: readonly Upstream[],
 ): { concept: Concept | null; problems: ConceptProblem[] } {

@@ -2,6 +2,7 @@
 // them, the pages modules are placed on, and the concepts and wiring the unified gateway is composed from.
 import { sql } from 'drizzle-orm';
 import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import type { ConceptProblem } from '../concepts/validate.ts';
 import type { WiringOverride } from '../gateway/wiring.ts';
 
 /** One header sent with every request to an upstream. The value may hold `${env:NAME}` references. */
@@ -124,4 +125,39 @@ export const items = pgTable(
     fullWidth: boolean('full_width').notNull().default(false),
   },
   (table) => [index('ix_items_page').on(table.pageSlug), check('ck_items_column_span', sql`${table.columnSpan} >= 1`)],
+);
+
+/**
+ * A concept someone proposed, waiting for a person to accept it as a concept or reject it. The definition is kept
+ * as submitted, with the problems its last submit found (gateway/proposal-service.ts).
+ */
+export const conceptProposals = pgTable(
+  'concept_proposals',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** The definition's name, or empty when it has none. */
+    name: text('name').notNull(),
+    definition: jsonb('definition').notNull(),
+    /** `pending` until a person accepts or rejects it. */
+    status: text('status').notNull().default('pending'),
+    problems: jsonb('problems').$type<ConceptProblem[]>().notNull().default(sql`'[]'::jsonb`),
+    /** Who drafted it: `generated` by the proposer, an `agent` over MCP, or a `user` in the web app. */
+    source: text('source').notNull(),
+    /** What the submitter said about it. */
+    note: text('note'),
+    /** Why a person rejected it. */
+    reason: text('reason'),
+    /** The concept accepting it saved. */
+    conceptId: uuid('concept_id').references(() => concepts.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index('ix_concept_proposals_status').on(table.status),
+    check('ck_concept_proposals_status', sql`${table.status} in ('pending', 'accepted', 'rejected')`),
+    check('ck_concept_proposals_source', sql`${table.source} in ('generated', 'agent', 'user')`),
+  ],
 );

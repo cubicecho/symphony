@@ -2,6 +2,7 @@
 // createApp and handed to both, so an agent and a person read and write the same things.
 import type { GraphQLSchema } from 'graphql';
 import type { Concept } from '../concepts/concept.ts';
+import type { ConceptDraft, NotReadyConcept } from '../concepts/propose.ts';
 import type { ConceptProblem } from '../concepts/validate.ts';
 import type { StoredCompileError, StoredHeader } from '../db/schema.ts';
 import type { CompositionIssue } from '../gateway/compose.ts';
@@ -261,6 +262,101 @@ export interface ConceptService {
   remove(idOrName: string): Promise<boolean>;
 }
 
+/** Where a concept proposal is: waiting for a person, or decided. */
+export const ProposalStatus = {
+  Pending: 'pending',
+  /** Saved as a concept. */
+  Accepted: 'accepted',
+  Rejected: 'rejected',
+} as const;
+export type ProposalStatus = (typeof ProposalStatus)[keyof typeof ProposalStatus];
+
+/** Who drafted a concept proposal. */
+export const ProposalSource = {
+  /** Symphony's proposer, from the upstreams' schemas. */
+  Generated: 'generated',
+  /** An agent, over MCP. */
+  Agent: 'agent',
+  /** A person, in the web app. */
+  User: 'user',
+} as const;
+export type ProposalSource = (typeof ProposalSource)[keyof typeof ProposalSource];
+
+/** A concept the proposer drafted, with its reasons and what the concept validator says of it. */
+export interface ProposedConcept extends ConceptDraft {
+  /** What stops it being saved as it is: empty when it could be. */
+  problems: ConceptProblem[];
+}
+
+/** What proposing found: drafts, and candidates that are not ready to be concepts. */
+export interface ConceptProposalsFound {
+  drafts: ProposedConcept[];
+  notReady: NotReadyConcept[];
+}
+
+/** A stored concept proposal. */
+export interface ConceptProposalRecord {
+  id: string;
+  /** The definition's name, or empty when it has none. */
+  name: string;
+  /** The definition as it was submitted. */
+  definition: unknown;
+  status: ProposalStatus;
+  source: ProposalSource;
+  /** What its last submit found: empty when it can be accepted. */
+  problems: ConceptProblem[];
+  note: string | null;
+  /** Why it was rejected. */
+  reason: string | null;
+  /** The concept accepting it saved; null until then, or once that concept is removed. */
+  conceptId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+/** What submitting a concept proposal takes. */
+export interface SubmitProposalInput {
+  /** The concept, as JSON. */
+  definition: unknown;
+  /** A pending proposal's id, to revise it. Left out to make a new one. */
+  id?: string;
+  source: ProposalSource;
+  note?: string;
+}
+
+/** Concepts drafted from the upstreams and proposed by agents and people; a person accepts them as concepts. */
+export interface ConceptProposalService {
+  /**
+   * Drafts concepts from the upstreams' cached schemas, without storing anything.
+   *
+   * @param [upstreams] - Only these upstreams' names; every upstream with a cached schema when left out.
+   * @throws NOT_FOUND for a name that is no upstream, BAD_USER_INPUT for one with no cached schema.
+   */
+  propose(upstreams?: readonly string[]): Promise<ConceptProposalsFound>;
+  /** Every proposal, newest first, or only those with one status. */
+  list(status?: ProposalStatus): Promise<ConceptProposalRecord[]>;
+  find(id: string): Promise<ConceptProposalRecord | null>;
+  /**
+   * Checks a definition and stores it as a pending proposal, problems and all.
+   *
+   * @throws NOT_FOUND for an unknown id, CONFLICT when that proposal is no longer pending.
+   */
+  submit(input: SubmitProposalInput): Promise<ConceptProposalRecord>;
+  /**
+   * Saves a pending proposal as a concept, which recomposes the unified API, and marks it accepted.
+   *
+   * @throws NOT_FOUND, CONFLICT when it is not pending, BAD_USER_INPUT with `extensions.problems` when the concept
+   * service refuses it.
+   */
+  accept(id: string): Promise<ConceptProposalRecord>;
+  /**
+   * Marks a pending proposal rejected.
+   *
+   * @throws NOT_FOUND, CONFLICT when it is not pending.
+   */
+  reject(id: string, reason?: string): Promise<ConceptProposalRecord>;
+}
+
 /** Something the unified gateway is composed from changed: a concept or a wiring override. */
 export interface SourcesChange {
   /** For the log, e.g. `concept Team saved`. */
@@ -370,6 +466,7 @@ export interface Services {
   pages: PageService;
   catalog: ComponentCatalog;
   concepts: ConceptService;
+  conceptProposals: ConceptProposalService;
   wiring: WiringService;
   unified: UnifiedService;
 }

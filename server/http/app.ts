@@ -11,6 +11,7 @@ import type { GraphQLRequest, Services, SourcesChange, UpstreamEvent } from '../
 import { HttpStatus } from '../core/wire.ts';
 import type { Database } from '../db/client.ts';
 import { createConceptService } from '../gateway/concept-service.ts';
+import { createProposalService } from '../gateway/proposal-service.ts';
 import { createUnifiedService, UNIFIED_ENDPOINT, type UnifiedGatewayService } from '../gateway/unified-service.ts';
 import { createWiringService } from '../gateway/wiring-service.ts';
 import { graphqlLogger } from '../graphql/logger.ts';
@@ -91,6 +92,7 @@ export function createApp({ db, mcpKey, checkDatabase, dist, ...deps }: AppDeps)
     pages: deps.pages ?? createPageService({ db }),
     catalog: deps.catalog ?? createComponentCatalog(),
     concepts,
+    conceptProposals: deps.conceptProposals ?? createProposalService({ db, upstreams, concepts }),
     wiring,
     unified,
   };
