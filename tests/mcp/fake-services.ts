@@ -111,6 +111,7 @@ export function createFakeServices(catalog: ComponentCatalog = createComponentCa
       find: async (id) => modules.get(id) ?? null,
       remove: async (id) => modules.delete(id),
       check: async (_upstream, source) => fakeCompile(source),
+      recheck: async () => 0,
       save: async (input) => {
         const upstream = await find(input.upstream);
         if (upstream === null) {

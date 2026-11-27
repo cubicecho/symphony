@@ -3,16 +3,21 @@
 //
 // Changes (a concept, an override, an upstream) ask for a recompose; requests arriving within the debounce are
 // coalesced, and compositions never overlap. A failed composition keeps the last good supergraph serving.
+// The served schema is introspected in-process after each composition, so the built-in `unified` upstream
+// (unified-upstream.ts) can hand it out and validate against it like any cached upstream schema.
 import { setTimeout as delay } from 'node:timers/promises';
 import type { RequestHandler } from 'express';
-import type { GraphQLSchema } from 'graphql';
+import { type GraphQLSchema, getIntrospectionQuery, type IntrospectionQuery } from 'graphql';
 import type { Concept } from '../concepts/concept.ts';
 import { ConceptValidationError, createConceptSubgraph } from '../concepts/subgraph.ts';
 import { GATEWAY_DEFAULTS, type GatewaySettings, UPSTREAM_DEFAULTS } from '../core/defaults.ts';
-import { errorMessage } from '../core/errors.ts';
+import { ErrorCode, errorMessage } from '../core/errors.ts';
 import type { EventFeed } from '../core/events.ts';
 import {
+  type CachedSchema,
   type ConceptService,
+  type GraphQLRequest,
+  type GraphQLResponseBody,
   type SourcesChange,
   type UnifiedError,
   type UnifiedProblem,
@@ -27,6 +32,7 @@ import {
 } from '../core/services.ts';
 import { HttpStatus } from '../core/wire.ts';
 import { createSecretResolver } from '../upstreams/secrets.ts';
+import { describeIntrospection, errorBody } from '../upstreams/upstream-service.ts';
 import { type CompositionIssue, composeSupergraph, type Supergraph, SupergraphCompositionError } from './compose.ts';
 import { schemasByName } from './concept-service.ts';
 import { createUnifiedGateway, type UnifiedGateway } from './gateway.ts';
@@ -54,6 +60,8 @@ export interface UnifiedServiceDeps {
   env?: Readonly<Record<string, string | undefined>>;
   /** The path the gateway answers on, as mounted. Default: UNIFIED_ENDPOINT. */
   graphqlEndpoint?: string;
+  /** Told the new served schema whenever a composition changes its SDL, before that composition counts as done. */
+  servedSchemas?: EventFeed<CachedSchema>;
 }
 
 /** The unified gateway with what the app and boot need besides its status. */
@@ -68,6 +76,16 @@ export interface UnifiedGatewayService extends UnifiedService {
   requestRecompose(reason: string): void;
   /** Resolves once no composition is waiting or running. */
   whenIdle(): Promise<void>;
+  /** The schema being served, as introspected from it; null until the first composition succeeds. */
+  servedSchema(): CachedSchema | null;
+  /**
+   * Runs one request on the served supergraph in-process, through the gateway runtime, with no HTTP round trip.
+   * It is not validated here: the unified upstream does that against `servedSchema`.
+   *
+   * @param request - The request.
+   * @returns The response body; a body with `errors` while nothing is served.
+   */
+  execute(request: GraphQLRequest): Promise<GraphQLResponseBody>;
   /** Serves the gateway: 503 until the first composition succeeds. Mount it behind express.json. */
   handler: RequestHandler;
   /** Stops recomposing and closes the gateway. */
@@ -79,6 +97,9 @@ interface Assembly {
   sources: Source[];
   problems: UnifiedProblem[];
 }
+
+/** Where in-process requests are addressed: the runtime routes on the path only, so the host is never reached. */
+const IN_PROCESS_ORIGIN = 'http://unified.internal';
 
 /** A GraphQL name, which a subgraph name must be to appear in the supergraph as it is. */
 const GRAPHQL_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -151,8 +172,10 @@ export function createUnifiedService(
   const settings = { ...GATEWAY_DEFAULTS, ...overrides };
   const env = deps.env ?? process.env;
   const fetchFn = deps.fetch ?? globalThis.fetch;
+  const graphqlEndpoint = deps.graphqlEndpoint ?? UNIFIED_ENDPOINT;
 
   let gateway: UnifiedGateway | null = null;
+  let served: CachedSchema | null = null;
   let status: UnifiedStatus = {
     state: UnifiedState.Starting,
     composedAt: null,
@@ -286,7 +309,7 @@ export function createUnifiedService(
         gateway = createUnifiedGateway({
           supergraph,
           fetch: fetchFn,
-          graphqlEndpoint: deps.graphqlEndpoint ?? UNIFIED_ENDPOINT,
+          graphqlEndpoint,
         });
         await gateway.runtime.getSchema();
       } else {
@@ -302,20 +325,87 @@ export function createUnifiedService(
       };
       console.log(LOG_TAG, `composed ${sources.length} source(s) (${why})`);
     } catch (error) {
-      const issues: CompositionIssue[] =
-        error instanceof SupergraphCompositionError
-          ? error.issues.map((issue) =>
-              issue.source === undefined ? issue : { ...issue, source: names.get(issue.source) ?? issue.source },
-            )
-          : [];
-      const lastError: UnifiedError = { message: errorMessage(error), issues, at: new Date() };
-      const state = gateway === null ? UnifiedState.Failed : UnifiedState.Ready;
-      status = { ...status, state, problems, lastError };
-      console.warn(
-        LOG_TAG,
-        `composition failed (${why}); ${gateway === null ? 'nothing is served' : 'the last good supergraph keeps serving'}: ${lastError.message}`,
+      recordFailure(error, why, names, problems);
+      return;
+    }
+    await introspectServed(why);
+  };
+
+  /**
+   * Records a failed composition; the last good supergraph, if any, keeps serving.
+   *
+   * @param error - What the attempt threw.
+   * @param why - What asked for it, for the log.
+   * @param names - Symphony's name for each subgraph the attempt named.
+   * @param problems - What the attempt left out.
+   */
+  const recordFailure = (
+    error: unknown,
+    why: string,
+    names: ReadonlyMap<string, string>,
+    problems: UnifiedProblem[],
+  ): void => {
+    const issues: CompositionIssue[] =
+      error instanceof SupergraphCompositionError
+        ? error.issues.map((issue) =>
+            issue.source === undefined ? issue : { ...issue, source: names.get(issue.source) ?? issue.source },
+          )
+        : [];
+    const lastError: UnifiedError = { message: errorMessage(error), issues, at: new Date() };
+    const state = gateway === null ? UnifiedState.Failed : UnifiedState.Ready;
+    status = { ...status, state, problems, lastError };
+    console.warn(
+      LOG_TAG,
+      `composition failed (${why}); ${gateway === null ? 'nothing is served' : 'the last good supergraph keeps serving'}: ${lastError.message}`,
+    );
+  };
+
+  /**
+   * Sends one request to the served supergraph through the runtime's fetch handler.
+   *
+   * @param request - The request.
+   * @returns The response body.
+   */
+  const executeInProcess = async (request: GraphQLRequest): Promise<GraphQLResponseBody> => {
+    if (gateway === null) {
+      return errorBody(
+        "The unified API is not serving yet: no composition has succeeded. The admin API's unifiedStatus says why.",
+        ErrorCode.UpstreamFailed,
       );
     }
+    const response = await gateway.runtime.fetch(`${IN_PROCESS_ORIGIN}${graphqlEndpoint}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify(request),
+    });
+    return (await response.json()) as GraphQLResponseBody;
+  };
+
+  /**
+   * Introspects what is now served and, when its SDL changed, keeps it and tells the followers. A failure keeps
+   * the schema introspected before.
+   *
+   * @param why - What asked for the composition, for the log.
+   */
+  const introspectServed = async (why: string): Promise<void> => {
+    let next: CachedSchema;
+    try {
+      const query = getIntrospectionQuery({ descriptions: true, inputValueDeprecation: true });
+      const body = await executeInProcess({ query });
+      const hasErrors = (body.errors?.length ?? 0) > 0;
+      if (hasErrors || body.data === undefined || body.data === null) {
+        throw new Error(body.errors?.map((one) => one.message).join(' ') ?? 'no data');
+      }
+      next = { ...describeIntrospection(body.data as IntrospectionQuery), fetchedAt: new Date() };
+    } catch (error) {
+      console.warn(LOG_TAG, `could not introspect the served supergraph (${why}): ${errorMessage(error)}`);
+      return;
+    }
+    if (served?.hash === next.hash) {
+      return;
+    }
+    served = next;
+    await deps.servedSchemas?.emit(next);
   };
 
   /** Runs a composition now, or once the running one is done. */
@@ -364,6 +454,10 @@ export function createUnifiedService(
     },
 
     requestRecompose,
+
+    servedSchema: () => served,
+
+    execute: executeInProcess,
 
     whenIdle: async () => {
       while (timer !== null || running !== null) {

@@ -27,7 +27,7 @@ import {
   type UpstreamService,
 } from '../core/services.ts';
 import type { Database } from '../db/client.ts';
-import { upstreamSchemas, upstreams } from '../db/schema.ts';
+import { modules, upstreamSchemas, upstreams } from '../db/schema.ts';
 import { CONCEPT_SOURCE_NAME } from '../gateway/wiring.ts';
 import { createSecretResolver } from './secrets.ts';
 
@@ -146,8 +146,59 @@ async function readLimited(response: Response, maxBytes: number): Promise<string
  * @param code - The `extensions.code`.
  * @returns A body with one error and no data.
  */
-function errorBody(message: string, code: string): GraphQLResponseBody {
+export function errorBody(message: string, code: string): GraphQLResponseBody {
   return { errors: [{ message, extensions: { code } }] };
+}
+
+/**
+ * Checks one request against an upstream's cached schema before it is sent.
+ *
+ * @param name - The upstream's name, for the message.
+ * @param schema - Its cached schema; null when it was never fetched.
+ * @param request - The request.
+ * @returns A body with the problems, or null when the request may be sent.
+ */
+export function refusalOf(
+  name: string,
+  schema: CachedSchema | null,
+  request: GraphQLRequest,
+): GraphQLResponseBody | null {
+  if (schema === null) {
+    return errorBody(
+      `${name}'s schema has not been fetched, so the request can't be checked. Refresh its schema first.`,
+      ErrorCode.UpstreamFailed,
+    );
+  }
+  let document: ReturnType<typeof parse>;
+  try {
+    document = parse(request.query);
+  } catch (error) {
+    return errorBody(errorMessage(error), ErrorCode.BadUserInput);
+  }
+  const problems = validate(schema.schema, document);
+  if (problems.length === 0) {
+    return null;
+  }
+  return {
+    errors: problems.map((problem) => ({ ...problem.toJSON(), extensions: { code: ErrorCode.BadUserInput } })),
+  };
+}
+
+/** A schema as the cache keeps it, without when it was fetched. */
+export type DescribedSchema = Omit<CachedSchema, 'fetchedAt'>;
+
+/**
+ * Builds a schema from an introspection result and describes it the way the cache stores it.
+ *
+ * @param introspection - The `data` of an introspection query.
+ * @returns The schema, its SDL, the SDL's hash and its type count (`__` types left out).
+ * @throws When the introspection is not a usable schema.
+ */
+export function describeIntrospection(introspection: IntrospectionQuery): DescribedSchema {
+  const schema = buildClientSchema(introspection);
+  const sdl = printSchema(schema);
+  const typeCount = Object.keys(schema.getTypeMap()).filter((name) => name.startsWith('__') === false).length;
+  return { schema, sdl, hash: hashOf(sdl), typeCount };
 }
 
 /**
@@ -351,7 +402,11 @@ export function createUpstreamService(
       if (row === undefined) {
         return false;
       }
-      await db.delete(upstreams).where(eq(upstreams.id, row.id));
+      // Modules name their upstream without a foreign key (the built-in unified upstream has no row), so they go here.
+      await db.transaction(async (tx) => {
+        await tx.delete(modules).where(eq(modules.upstreamId, row.id));
+        await tx.delete(upstreams).where(eq(upstreams.id, row.id));
+      });
       built.delete(row.id);
       await deps.events?.emit({ change: UpstreamChange.Removed, id: row.id, name: row.name, previousName: row.name });
       return true;
@@ -362,23 +417,9 @@ export function createUpstreamService(
     execute: async (id, request) => {
       const row = await requireRow(id);
       const upstream = await toUpstream(row);
-      if (upstream.schema === null) {
-        return errorBody(
-          `${row.name}'s schema has not been fetched, so the request can't be checked. Refresh its schema first.`,
-          ErrorCode.UpstreamFailed,
-        );
-      }
-      let document: ReturnType<typeof parse>;
-      try {
-        document = parse(request.query);
-      } catch (error) {
-        return errorBody(errorMessage(error), ErrorCode.BadUserInput);
-      }
-      const problems = validate(upstream.schema.schema, document);
-      if (problems.length > 0) {
-        return {
-          errors: problems.map((problem) => ({ ...problem.toJSON(), extensions: { code: ErrorCode.BadUserInput } })),
-        };
+      const refusal = refusalOf(row.name, upstream.schema, request);
+      if (refusal !== null) {
+        return refusal;
       }
       try {
         return await sendRequest(row, request, settings.proxyTimeoutMs);
@@ -405,16 +446,14 @@ export function createUpstreamService(
       throw upstreamFailed(`${row.name} refused introspection: ${messages}`);
     }
     const introspection = body.data as IntrospectionQuery;
-    let sdl: string;
-    let typeCount: number;
+    let described: DescribedSchema;
     try {
-      const schema = buildClientSchema(introspection);
-      sdl = printSchema(schema);
-      typeCount = Object.keys(schema.getTypeMap()).filter((name) => name.startsWith('__') === false).length;
+      described = describeIntrospection(introspection);
     } catch (error) {
       throw upstreamFailed(`${row.name}'s introspection is not a usable schema: ${errorMessage(error)}`);
     }
-    const values = { upstreamId: row.id, introspection, sdl, hash: hashOf(sdl), typeCount, fetchedAt: new Date() };
+    const { sdl, hash, typeCount } = described;
+    const values = { upstreamId: row.id, introspection, sdl, hash, typeCount, fetchedAt: new Date() };
     await db
       .insert(upstreamSchemas)
       .values(values)

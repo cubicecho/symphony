@@ -49,9 +49,11 @@ export const modules = pgTable(
     id: uuid('id').primaryKey().defaultRandom(),
     name: text('name').notNull(),
     description: text('description').notNull().default(''),
-    upstreamId: uuid('upstream_id')
-      .notNull()
-      .references(() => upstreams.id, { onDelete: 'cascade' }),
+    /**
+     * The upstream's id. No foreign key: the built-in unified upstream has no row. Removing an upstream deletes its
+     * modules in the same transaction (upstreams/upstream-service.ts).
+     */
+    upstreamId: uuid('upstream_id').notNull(),
     source: text('source').notNull(),
     /** The compiled browser code, or null while the source does not compile. */
     compiled: text('compiled'),

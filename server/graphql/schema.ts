@@ -209,6 +209,7 @@ export function buildSchema(): GraphQLSchema {
       },
       Upstream: {
         proxyPath: (upstream: Upstream) => proxyPathOf(upstream.id),
+        builtIn: (upstream: Upstream) => upstream.builtIn === true,
       },
       UpstreamSchema: {
         fetchedAt: (schema: { fetchedAt: Date }) => schema.fetchedAt.toISOString(),

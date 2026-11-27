@@ -3,6 +3,7 @@ fragment UpstreamFields on Upstream {
   name
   url
   proxyPath
+  builtIn
   headers {
     name
     value
