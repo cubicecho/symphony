@@ -48,6 +48,6 @@ describe('discovery documents', () => {
 
   it('names the card after the host, so two servers on one network stay apart', () => {
     const [endpoint] = discoveryEndpoints({ version: '1.0.0', host: 'NAS.lan' });
-    expect(endpoint?.identifier).toBe('urn:air:nas.symphony:mcp:modules');
+    expect(endpoint?.identifier).toBe('urn:air:nas.symphony:mcp:symphony');
   });
 });

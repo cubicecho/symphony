@@ -17,7 +17,7 @@ const CARD_NAMESPACE = 'io.github.cubicecho.symphony';
 const AIR_PUBLISHER = 'symphony';
 
 /** The endpoint's stable name under the host, the last part of its card name and `urn:air` id. */
-const ENDPOINT_NAME = 'modules';
+const ENDPOINT_NAME = 'symphony';
 
 /** The project's source, shown on the card. */
 const REPOSITORY = { url: 'https://github.com/cubicecho/symphony', source: 'github' } as const;

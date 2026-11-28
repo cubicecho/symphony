@@ -58,7 +58,7 @@ Symphony describes its MCP endpoint so other tools, such as
 
 - `GET /.well-known/ai-catalog.json` is an [AI Catalog](https://github.com/Agent-Card/ai-catalog) listing `/mcp`.
 - `GET /mcp/server-card` is its [MCP Server Card](https://modelcontextprotocol.io/seps/2127-mcp-server-cards):
-  `io.github.cubicecho.symphony.<host>/modules`, with the URL the request came in on.
+  `io.github.cubicecho.symphony.<host>/symphony`, with the URL the request came in on.
 
 Both are public, with no key needed. The card says `/mcp` needs an `Authorization` header (the key as a bearer
 token), but never carries the key. Both come from
