@@ -7,9 +7,9 @@ import { LoadState } from '@/components/load-state';
 import { PageLayout } from '@/components/page-layout';
 import { Button } from '@/components/ui/button';
 import { GitBranch, Layers, Plus, Sparkles, Trash2 } from '@/components/ui/icons';
-import { countLabel } from '@/core/format';
 import { ProblemAlert } from '@/core/problem-alert';
 import { messageOf } from '@/lib/error-message';
+import { formatCount } from '@/lib/format';
 import { ConceptServableBadge } from './concept-servable-badge.tsx';
 import { summarizeDefinition } from './concept-summary.ts';
 import { ProposalsSection } from './proposals-section.tsx';
@@ -93,7 +93,7 @@ function ConceptRow({ concept, onProblem }: ConceptRowProps) {
   const [isConfirmingRemove, setIsConfirmingRemove] = useState(false);
   const { members, shared, owned } = summarizeDefinition(concept.definition);
   const memberNames = members.map((member) => member.upstream).join(', ');
-  const fieldCount = countLabel(shared.length + owned.length, 'field', 'fields');
+  const fieldCount = formatCount(shared.length + owned.length, 'field');
 
   /** Removes the concept, and says so when the server refuses. */
   const remove = (): void => {
@@ -111,9 +111,7 @@ function ConceptRow({ concept, onProblem }: ConceptRowProps) {
           <span className="flex items-center gap-2">
             <ConceptServableBadge servable={concept.servable} />
             {concept.problems.length === 0 ? null : (
-              <span className="text-foreground/60 text-xs">
-                {countLabel(concept.problems.length, 'problem', 'problems')}
-              </span>
+              <span className="text-foreground/60 text-xs">{formatCount(concept.problems.length, 'problem')}</span>
             )}
           </span>
         }

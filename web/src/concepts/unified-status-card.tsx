@@ -10,7 +10,7 @@ import { Button } from '@/components/ui/button';
 import { CopyButton } from '@/components/ui/copy-button';
 import { RefreshCw } from '@/components/ui/icons';
 import { ExternalLink } from '@/core/app-icons';
-import { countLabel, formatDateTime } from '@/core/format';
+import { formatCount, formatDateTime } from '@/lib/format';
 import { placeOf } from './concept-summary.ts';
 import { type UnifiedStatus, useUnifiedStatus } from './use-concepts.ts';
 
@@ -187,7 +187,7 @@ export function UnifiedStatusCard() {
                       </span>
                     )
                   }
-                  hint={countLabel(status.sources.length, 'source', 'sources')}
+                  hint={formatCount(status.sources.length, 'source')}
                 />,
               ]}
             />

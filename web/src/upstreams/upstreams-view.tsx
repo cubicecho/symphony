@@ -10,9 +10,9 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Ellipsis, Eye, Pencil, Plus, RefreshCw, Server, Trash2 } from '@/components/ui/icons';
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@/components/ui/menu';
-import { countLabel, formatDateTime } from '@/core/format';
 import { ProblemAlert } from '@/core/problem-alert';
 import { messageOf } from '@/lib/error-message';
+import { formatCount, formatDateTime } from '@/lib/format';
 import { SchemaDialog } from './schema-dialog.tsx';
 import { UpstreamDialog } from './upstream-dialog.tsx';
 import {
@@ -234,7 +234,7 @@ function UpstreamRow({ upstream, onEdit, onViewSchema, onProblem }: UpstreamRowP
       <Badge variant="warning-soft">{builtIn ? 'Not composed yet' : 'Schema not fetched'}</Badge>
     ) : (
       <span className="text-foreground/60 text-xs">
-        {countLabel(schema.typeCount, 'type', 'types')}, fetched {formatDateTime(schema.fetchedAt)}
+        {formatCount(schema.typeCount, 'type')}, fetched {formatDateTime(schema.fetchedAt)}
       </span>
     );
 

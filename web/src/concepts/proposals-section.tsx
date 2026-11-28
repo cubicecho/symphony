@@ -6,11 +6,12 @@ import { ListItem } from '@/components/list-item';
 import { LoadState } from '@/components/load-state';
 import { Section } from '@/components/section';
 import { SegmentedButton, SegmentedGroup } from '@/components/ui/segmented';
-import { countLabel, formatDateTime } from '@/core/format';
+import { StatusBadge } from '@/components/ui/status-badge';
+import { formatCount, formatDateTime } from '@/lib/format';
 import { PROPOSAL_FILTERS, type ProposalFilter, STATUS_LABELS } from './concept-proposals.ts';
 import { ConceptServableBadge } from './concept-servable-badge.tsx';
 import { ProposalSourceBadge } from './proposal-source-badge.tsx';
-import { ProposalStatusBadge } from './proposal-status-badge.tsx';
+import { PROPOSAL_STATUSES } from './proposal-statuses.ts';
 import { type ConceptProposal, useConceptProposals } from './use-concept-proposals.ts';
 
 /** What the empty list says, per filter. */
@@ -95,13 +96,11 @@ function ProposalRow({ proposal, showStatus }: ProposalRowProps) {
       description={proposalLine(proposal)}
       meta={
         <span className="flex flex-wrap items-center gap-2">
-          {showStatus ? <ProposalStatusBadge status={proposal.status} /> : null}
+          {showStatus ? <StatusBadge status={proposal.status} statuses={PROPOSAL_STATUSES} /> : null}
           <ProposalSourceBadge source={proposal.source} />
           <ConceptServableBadge servable={proposal.servable} kind="draft" />
           {proposal.problems.length === 0 ? null : (
-            <span className="text-foreground/60 text-xs">
-              {countLabel(proposal.problems.length, 'problem', 'problems')}
-            </span>
+            <span className="text-foreground/60 text-xs">{formatCount(proposal.problems.length, 'problem')}</span>
           )}
         </span>
       }
