@@ -69,6 +69,24 @@ over mDNS as an `_mcp._tcp` service once it is listening, so it can be found wit
 goodbye on shutdown. mDNS needs multicast, which Docker's default bridge network drops: in a container, use
 `network_mode: host` (commented in `docker-compose.yml`) for the announcement to reach the LAN.
 
+**Find GraphQL APIs on the local network** with `LAN_DISCOVER=true` (off by default). Symphony then watches for
+`_graphql._tcp` services, the ones apps advertise with
+[`@cubicecho/graphql-mdns-discovery`](https://github.com/cubicecho/graphql-mdns-discovery), and lists what it finds
+under **Upstreams → On your network**:
+
+- Nothing is added on its own. **Add** opens the usual dialog with the advertised address filled in. An API that
+  says it needs a header (a token, say) is shown as "Needs a token", and it can't be added until that header has a
+  value. Advertisements never carry header values.
+- An upstream added this way follows its API: if the API turns up at a new address, the upstream's URL moves with
+  it, and its name and headers stay as you set them. Changing the URL by hand ends that.
+- An API that leaves the network is shown as offline. Its upstream is kept.
+- Another Symphony's own API (one whose advertisement carries `io.github.cubicecho.symphony/role` in `_meta`) is never
+  offered, so two Symphonies don't wrap each other.
+- The admin API has the same: `lanDiscovery` lists what was found, and `addDiscoveredUpstream` adds one.
+
+Advertising and discovery share one mDNS socket. Anything on the LAN can advertise, so add only what you recognise:
+the same trust Symphony already places in the network it listens on.
+
 ## Trust model (Phase 1)
 
 - **Single operator, self-hosted.** The web UI, the admin API at `/graphql` and the unified API at `/unified/graphql` have no sign-in. Only `/mcp` takes a key. Run Symphony on a network you trust.
@@ -86,7 +104,8 @@ server/   Express + graphql-yoga + drizzle (PGlite in DATA_DIR, or Postgres via 
   gateway/    the unified API: concept and wiring storage, field conflicts, composition, the hot-swapped gateway at
               /unified/graphql (docs/spike-gateway.md, "Concepts")
   mcp/        the agents' door (MCP SDK, stateless Streamable HTTP)
-  discovery/  the Server Card and AI Catalog entry for /mcp (@cubicecho/mcp-discovery)
+  discovery/  the Server Card and AI Catalog entry for /mcp (@cubicecho/mcp-discovery), and GraphQL APIs found on the
+              LAN as upstreams (@cubicecho/graphql-mdns-discovery)
   catalog/    cubeui component catalogue and docs (synced by `npm run catalog:sync`)
 web/      Vite + React + TanStack Router/Query + cubeui; web/src/modules is the module runtime and loader
 docs/     module-contract.md

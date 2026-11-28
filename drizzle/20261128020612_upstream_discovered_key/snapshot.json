@@ -1,0 +1,82 @@
+{
+  "type": "diff",
+  "version": "9",
+  "dialect": "postgres",
+  "id": "3535e538-16bf-4b44-99bc-f8595944cd41",
+  "prevIds": [
+    "fe1a12ec-58b5-40a1-96be-d3e1adeaada1",
+    "68088bd0-8298-4219-beda-417583be420b"
+  ],
+  "footprints": [
+    {
+      "statementType": "add_column",
+      "statementTarget": [
+        "column",
+        "public",
+        "upstreams",
+        "discovered_key"
+      ],
+      "writes": [
+        "s|col|public.upstreams.discovered_key",
+        "n|col|public.upstreams.discovered_key",
+        "e|col|public.upstreams.discovered_key"
+      ],
+      "reads": [
+        "n|tbl|public.upstreams",
+        "n|sch|public"
+      ]
+    },
+    {
+      "statementType": "add_unique",
+      "statementTarget": [
+        "table",
+        "public",
+        "upstreams"
+      ],
+      "writes": [
+        "s|uq|public.upstreams.upstreams_discovered_key_key",
+        "n|uq|public.upstreams.upstreams_discovered_key_key",
+        "e|uq|public.upstreams.upstreams_discovered_key_key",
+        "n|con|public.upstreams.upstreams_discovered_key_key",
+        "n|rel|public.upstreams_discovered_key_key"
+      ],
+      "reads": [
+        "n|tbl|public.upstreams",
+        "n|sch|public",
+        "n|col|public.upstreams.discovered_key"
+      ]
+    }
+  ],
+  "deltas": [
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "upstreams",
+        "name": "discovered_key",
+        "type": "text",
+        "typeSchema": null,
+        "notNull": false,
+        "dimensions": 0,
+        "default": null,
+        "generated": null,
+        "identity": null,
+        "entityType": "columns"
+      }
+    },
+    {
+      "op": "create",
+      "row": {
+        "schema": "public",
+        "table": "upstreams",
+        "name": "upstreams_discovered_key_key",
+        "nameExplicit": false,
+        "columns": [
+          "discovered_key"
+        ],
+        "nullsNotDistinct": false,
+        "entityType": "uniques"
+      }
+    }
+  ]
+}

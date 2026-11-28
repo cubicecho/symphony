@@ -23,7 +23,7 @@ await opened.migrate();
 console.log(`[db] ${opened.isPostgres ? 'Postgres' : 'PGlite'} at ${opened.location}`);
 
 const key = mcpKey();
-const { app, unified, streams } = createApp({
+const { app, unified, streams, lanUpstreams } = createApp({
   db: opened.db,
   mcpKey: key,
   checkDatabase: () => opened.db.execute(sql`select 1`),
@@ -42,13 +42,18 @@ const server = app.listen(port(), host(), () => {
   }
   // After listen, so a router that finds the announcement can already read the catalog.
   void advertiser.sync();
+  // Off unless LAN_DISCOVER=true. It shares the mDNS socket with the announcement above.
+  void lanUpstreams.start();
 });
 // The first composition runs in the background; /unified/graphql answers 503 until it succeeds.
 unified.start();
 // Open subscription streams keep their connections until the drain deadline, then close both sides.
 stopOnSignals(server, {
   // First, so the goodbye goes out while the server can still answer.
-  before: () => advertiser.close(),
+  before: async () => {
+    await advertiser.close();
+    await lanUpstreams.stop();
+  },
   cutOff: () => streams.closeAll(),
   after: async () => {
     await unified.dispose();

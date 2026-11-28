@@ -4,6 +4,7 @@ fragment UpstreamFields on Upstream {
   url
   proxyPath
   builtIn
+  discoveredKey
   headers {
     name
     value
@@ -48,6 +49,32 @@ mutation DeleteUpstream($id: ID!) {
 
 mutation RefreshSchema($id: ID!) {
   refreshSchema(id: $id) {
+    ...UpstreamFields
+  }
+}
+
+query LanDiscovery {
+  lanDiscovery {
+    enabled
+    upstreams {
+      key
+      serviceName
+      title
+      description
+      url
+      requiredHeaders
+      host
+      state
+      upstream {
+        id
+        name
+      }
+    }
+  }
+}
+
+mutation AddDiscoveredUpstream($input: AddDiscoveredUpstreamInput!) {
+  addDiscoveredUpstream(input: $input) {
     ...UpstreamFields
   }
 }

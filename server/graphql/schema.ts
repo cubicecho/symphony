@@ -5,6 +5,7 @@ import { LAYOUT_DEFAULTS, MODULE_DEFAULTS } from '../core/defaults.ts';
 import { notFound } from '../core/errors.ts';
 import {
   type ConceptRecord,
+  type DiscoveredUpstream,
   type ModuleRecord,
   ModuleStatus,
   type Page,
@@ -115,6 +116,10 @@ export function buildSchema(): GraphQLSchema {
         concept: (_: unknown, args: { idOrName: string }, ctx: Context) => ctx.concepts.find(args.idOrName),
         sourceWiring: async (_: unknown, _args: unknown, ctx: Context) => (await ctx.wiring.effective()).wiring,
         unifiedStatus: (_: unknown, _args: unknown, ctx: Context) => ctx.unified.status(),
+        lanDiscovery: async (_: unknown, _args: unknown, ctx: Context) => ({
+          enabled: ctx.lanUpstreams.enabled(),
+          upstreams: await ctx.lanUpstreams.list(),
+        }),
       },
       Mutation: {
         addUpstream: (_: unknown, args: { input: Parameters<Context['upstreams']['add']>[0] }, ctx: Context) =>
@@ -129,6 +134,11 @@ export function buildSchema(): GraphQLSchema {
         },
         deleteUpstream: (_: unknown, args: { id: string }, ctx: Context) => ctx.upstreams.remove(args.id),
         refreshSchema: (_: unknown, args: { id: string }, ctx: Context) => ctx.upstreams.refresh(args.id),
+        addDiscoveredUpstream: (
+          _: unknown,
+          args: { input: Parameters<Context['lanUpstreams']['add']>[0] },
+          ctx: Context,
+        ) => ctx.lanUpstreams.add(args.input),
         saveModule: async (
           _: unknown,
           args: {
@@ -213,6 +223,11 @@ export function buildSchema(): GraphQLSchema {
       Upstream: {
         proxyPath: (upstream: Upstream) => proxyPathOf(upstream.id),
         builtIn: (upstream: Upstream) => upstream.builtIn === true,
+        discoveredKey: (upstream: Upstream) => upstream.discoveredKey ?? null,
+      },
+      DiscoveredUpstream: {
+        upstream: (found: DiscoveredUpstream, _args: unknown, ctx: Context) =>
+          found.upstreamId === null ? null : ctx.upstreams.find(found.upstreamId),
       },
       UpstreamSchema: {
         fetchedAt: (schema: { fetchedAt: Date }) => schema.fetchedAt.toISOString(),

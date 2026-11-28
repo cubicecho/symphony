@@ -25,6 +25,8 @@ export const upstreams = pgTable('upstreams', {
   name: text('name').notNull().unique(),
   url: text('url').notNull(),
   headers: jsonb('headers').$type<StoredHeader[]>().notNull().default(sql`'[]'::jsonb`),
+  /** The LAN discovery key (`<mDNS instance>/<service name>`) it was added from, so a moved API's URL can follow it. */
+  discoveredKey: text('discovered_key').unique(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 

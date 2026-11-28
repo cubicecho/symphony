@@ -4,7 +4,7 @@ import { discoveryMiddleware } from '@cubicecho/mcp-discovery';
 import express, { type Express } from 'express';
 import { createYoga } from 'graphql-yoga';
 import { createComponentCatalog } from '../catalog/catalog.ts';
-import { isProduction, subscriptionSettings, trustProxy, version } from '../core/config.ts';
+import { isProduction, lanDiscover, subscriptionSettings, trustProxy, version } from '../core/config.ts';
 import { HTTP_DEFAULTS, type SubscriptionSettings } from '../core/defaults.ts';
 import { errorMessage } from '../core/errors.ts';
 import { createEventFeed } from '../core/events.ts';
@@ -19,6 +19,7 @@ import {
 import { HttpStatus } from '../core/wire.ts';
 import type { Database } from '../db/client.ts';
 import { discoveryEndpoints } from '../discovery/endpoints.ts';
+import { createLanUpstreamService, type LanUpstreams } from '../discovery/lan-upstreams.ts';
 import { createConceptService } from '../gateway/concept-service.ts';
 import { createProposalService } from '../gateway/proposal-service.ts';
 import { createUnifiedService, UNIFIED_ENDPOINT, type UnifiedGatewayService } from '../gateway/unified-service.ts';
@@ -46,8 +47,10 @@ const IMMUTABLE_CACHE = 'public, max-age=31536000, immutable';
  * What the app is built from. Services left out are built over `db`; the unified gateway always is. A given
  * `upstreams` is the stored upstreams only: the app adds the built-in `unified` one to what it hands out.
  */
-export interface AppDeps extends Partial<Omit<Services, 'unified'>> {
+export interface AppDeps extends Partial<Omit<Services, 'unified' | 'lanUpstreams'>> {
   db: Database;
+  /** LAN discovery. Default: watching only when `LAN_DISCOVER` is on, and only once boot calls `start`. */
+  lanUpstreams?: LanUpstreams;
   /** The key MCP clients send. Empty shuts /mcp. */
   mcpKey: string;
   /** Runs a trivial query, rejecting when the database doesn't answer. */
@@ -69,6 +72,8 @@ export interface BuiltApp {
   unified: UnifiedGatewayService;
   /** The proxy's subscription streams; shutdown closes them at the drain deadline. */
   streams: StreamProxy;
+  /** LAN discovery; boot starts it after listen and stops it on shutdown. */
+  lanUpstreams: LanUpstreams;
 }
 
 /**
@@ -117,6 +122,8 @@ export function createApp({ db, mcpKey, checkDatabase, dist, subscriptions, ...d
   });
   const upstreams = withUnifiedUpstream(stored, unified);
   const modules = deps.modules ?? createModuleService({ db, upstreams });
+  // Found APIs become stored upstreams, so it works on those, never on the built-in one.
+  const lanUpstreams = deps.lanUpstreams ?? createLanUpstreamService({ upstreams: stored, isWanted: lanDiscover });
   // A schema that changed under its modules re-checks them, so a page shows a module that broke as failing. So does a
   // rename, since `gql.from('<name>')` names an upstream by its name.
   upstreamEvents.subscribe(async (event) => {
@@ -130,6 +137,7 @@ export function createApp({ db, mcpKey, checkDatabase, dist, subscriptions, ...d
   });
   const services: Services = {
     upstreams,
+    lanUpstreams,
     modules,
     pages: deps.pages ?? createPageService({ db }),
     catalog: deps.catalog ?? createComponentCatalog(),
@@ -203,5 +211,5 @@ export function createApp({ db, mcpKey, checkDatabase, dist, subscriptions, ...d
     app.use(express.static(dist));
     app.get(WEB_ROUTES, (_req, res) => res.sendFile('index.html', { root: dist }));
   }
-  return { app, services, unified, streams };
+  return { app, services, unified, streams, lanUpstreams };
 }

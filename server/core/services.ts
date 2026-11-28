@@ -32,6 +32,8 @@ export interface Upstream {
   schema: CachedSchema | null;
   /** True for one Symphony provides itself (the unified API), which can't be edited, refreshed or removed. */
   builtIn?: boolean;
+  /** The LAN discovery key it was added from, or null (or absent) for one added by hand. */
+  discoveredKey?: string | null;
 }
 
 /** What adding or changing an upstream takes. */
@@ -39,6 +41,8 @@ export interface UpstreamInput {
   name: string;
   url: string;
   headers: StoredHeader[];
+  /** The LAN discovery key it comes from. Left out, an update keeps the stored one, unless it changes the URL. */
+  discoveredKey?: string | null;
 }
 
 /** One GraphQL request, as a client sends it. */
@@ -523,8 +527,63 @@ export interface UnifiedService {
 }
 
 /** Everything a request can reach. */
+/** Where a GraphQL API found on the LAN stands, as an upstream. */
+export const DiscoveredUpstreamState = {
+  /** Not added yet, and nothing has to be supplied first. */
+  New: 'NEW',
+  /** Not added yet; it needs a header only the operator can give, such as a token. */
+  NeedsToken: 'NEEDS_TOKEN',
+  /** Added, and still on the network. */
+  Linked: 'LINKED',
+  /** It said goodbye, or its document stopped listing it. An upstream added from it is kept. */
+  Offline: 'OFFLINE',
+} as const;
+export type DiscoveredUpstreamState = (typeof DiscoveredUpstreamState)[keyof typeof DiscoveredUpstreamState];
+
+/** A GraphQL API found on the LAN, offered as an upstream. */
+export interface DiscoveredUpstream {
+  /** Unique on the network: `<mDNS instance>/<service name>`. */
+  key: string;
+  /** The service's reverse-DNS name, e.g. `io.github.cubicecho.ethos.nas/api`. */
+  serviceName: string;
+  title: string | null;
+  description: string | null;
+  /** The GraphQL endpoint. */
+  url: string;
+  /** Headers the API says a client must send, e.g. `Authorization`. */
+  requiredHeaders: string[];
+  /** The mDNS instance that advertised it, e.g. `Ethos on nas`. */
+  host: string;
+  state: DiscoveredUpstreamState;
+  /** The upstream added from it, or null. */
+  upstreamId: string | null;
+}
+
+/** What adding a discovered API as an upstream takes; its URL comes from the network. */
+export interface AddDiscoveredUpstreamInput {
+  key: string;
+  name: string;
+  headers: StoredHeader[];
+}
+
+/** GraphQL APIs found on the LAN over mDNS, and adding them as upstreams. */
+export interface LanUpstreamService {
+  /** Whether the LAN is being watched (`LAN_DISCOVER`). */
+  enabled(): boolean;
+  /** Every API found since boot, with where it stands. */
+  list(): Promise<DiscoveredUpstream[]>;
+  /**
+   * Adds a found API as an upstream, recording where it came from.
+   *
+   * @throws NOT_FOUND for an unknown key, BAD_USER_INPUT when it is offline, already added, or a required header is
+   * missing, and whatever `UpstreamService.add` throws.
+   */
+  add(input: AddDiscoveredUpstreamInput): Promise<Upstream>;
+}
+
 export interface Services {
   upstreams: UpstreamService;
+  lanUpstreams: LanUpstreamService;
   modules: ModuleService;
   pages: PageService;
   catalog: ComponentCatalog;

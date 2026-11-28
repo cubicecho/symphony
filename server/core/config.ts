@@ -154,6 +154,15 @@ export function lanAdvertise(): boolean {
 }
 
 /**
+ * Whether Symphony watches the LAN for GraphQL APIs to offer as upstreams.
+ *
+ * @returns `LAN_DISCOVER`, or `DISCOVERY_DEFAULTS.lanDiscover`.
+ */
+export function lanDiscover(): boolean {
+  return envBoolean(process.env.LAN_DISCOVER, DISCOVERY_DEFAULTS.lanDiscover);
+}
+
+/**
  * Express's `trust proxy`.
  *
  * @returns `TRUST_PROXY` read as a boolean, a hop count or a list, or `HTTP_DEFAULTS.trustProxy`.
