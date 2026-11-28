@@ -8,6 +8,8 @@ export interface ModuleScope {
   proxyPath: string;
   /** Where each of the module's upstreams takes documents, by name: what a `gql.from('<name>')` document goes to. */
   proxyPaths: Readonly<Record<string, string>>;
+  /** The page item the module is drawn for, whose path the page URL keeps. Absent in the editor's preview. */
+  itemId?: string | undefined;
 }
 
 /** One of a module's upstreams, as the scope is built from it. */
@@ -24,12 +26,18 @@ export const ModuleContext = createContext<ModuleScope | null>(null);
  *
  * @param moduleId - The module.
  * @param upstreams - Its upstreams, in order: the first is the default.
+ * @param [itemId] - The page item it is drawn for, or undefined in the editor's preview.
  * @returns The scope. A module with no upstreams (never stored so) gets an empty default path, which no request
  * reaches: the hooks fail it first.
  */
-export function moduleScopeOf(moduleId: string, upstreams: readonly ScopeUpstream[]): ModuleScope {
+export function moduleScopeOf(
+  moduleId: string,
+  upstreams: readonly ScopeUpstream[],
+  itemId?: string | undefined,
+): ModuleScope {
   return {
     moduleId,
+    itemId,
     proxyPath: upstreams[0]?.proxyPath ?? '',
     proxyPaths: Object.fromEntries(upstreams.map((upstream) => [upstream.name, upstream.proxyPath])),
   };

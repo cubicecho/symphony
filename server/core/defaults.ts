@@ -88,7 +88,10 @@ export const DATABASE_DEFAULTS: Readonly<DatabaseSettings> = Object.freeze({
 export interface UpstreamSettings {
   /** How long an introspection request may take, in milliseconds. */
   introspectionTimeoutMs: number;
-  /** How long one proxied query or mutation may take, in milliseconds. */
+  /**
+   * How long one proxied query or mutation may take, in milliseconds. A subscription gets this long to start streaming;
+   * once it streams, `SUBSCRIPTION_DEFAULTS.idleTimeoutSeconds` bounds it instead.
+   */
   proxyTimeoutMs: number;
   /** Largest upstream response read, in bytes. */
   maxResponseBytes: number;
@@ -101,6 +104,34 @@ export const UPSTREAM_DEFAULTS: Readonly<UpstreamSettings> = Object.freeze({
   proxyTimeoutMs: 30_000,
   maxResponseBytes: 5_000_000,
   secretEnvPrefix: 'SYMPHONY_',
+});
+
+/** Bounds on the subscription streams the proxy holds open (`POST /proxy/:upstreamId` with `accept: text/event-stream`). */
+export interface SubscriptionSettings {
+  /** Most streams open at once over every upstream. `SUBSCRIPTION_MAX_STREAMS` overrides it. */
+  maxStreams: number;
+  /** Most streams open at once to one upstream. `SUBSCRIPTION_MAX_STREAMS_PER_UPSTREAM` overrides it. */
+  maxStreamsPerUpstream: number;
+  /**
+   * How long a stream may go without an event before it is closed, in seconds. A stream has no request timeout: this
+   * is what frees one nobody follows any more. `SUBSCRIPTION_IDLE_TIMEOUT_SECONDS` overrides it.
+   */
+  idleTimeoutSeconds: number;
+  /** Largest single event read from an upstream, in bytes. `SUBSCRIPTION_MAX_EVENT_BYTES` overrides it. */
+  maxEventBytes: number;
+  /** How often an open stream sends the browser a comment line, so proxies on the way don't close it, in seconds. */
+  keepAliveSeconds: number;
+  /** How long shutdown waits for open streams to end their responses before it cuts the connections, in milliseconds. */
+  closeGraceMs: number;
+}
+
+export const SUBSCRIPTION_DEFAULTS: Readonly<SubscriptionSettings> = Object.freeze({
+  maxStreams: 200,
+  maxStreamsPerUpstream: 50,
+  idleTimeoutSeconds: 300,
+  maxEventBytes: 1_000_000,
+  keepAliveSeconds: 15,
+  closeGraceMs: 1_000,
 });
 
 /** Bounds on a submitted module. */

@@ -4,8 +4,8 @@ import { discoveryMiddleware } from '@cubicecho/mcp-discovery';
 import express, { type Express } from 'express';
 import { createYoga } from 'graphql-yoga';
 import { createComponentCatalog } from '../catalog/catalog.ts';
-import { isProduction, trustProxy, version } from '../core/config.ts';
-import { HTTP_DEFAULTS } from '../core/defaults.ts';
+import { isProduction, subscriptionSettings, trustProxy, version } from '../core/config.ts';
+import { HTTP_DEFAULTS, type SubscriptionSettings } from '../core/defaults.ts';
 import { errorMessage } from '../core/errors.ts';
 import { createEventFeed } from '../core/events.ts';
 import {
@@ -30,8 +30,9 @@ import { buildSchema, type Context } from '../graphql/schema.ts';
 import { createMcpHandler, MCP_ENDPOINT } from '../mcp/endpoint.ts';
 import { createModuleService } from '../modules/module-service.ts';
 import { createPageService } from '../pages/page-service.ts';
-import { createUpstreamService } from '../upstreams/upstream-service.ts';
+import { createUpstreamService, isSubscriptionRequest } from '../upstreams/upstream-service.ts';
 import { healthHandler } from './health.ts';
+import { createStreamProxy, type StreamProxy, wantsStream } from './stream-proxy.ts';
 
 const GRAPHQL_ENDPOINT = '/graphql';
 /** Every path but the server's own, so the web app's routes load index.html. */
@@ -55,6 +56,8 @@ export interface AppDeps extends Partial<Omit<Services, 'unified'>> {
   fetch?: typeof fetch;
   /** The built web app's directory. Left out in tests. */
   dist?: string;
+  /** Stream limits to replace, over the environment's. Tests shorten the idle timeout. */
+  subscriptions?: Partial<SubscriptionSettings>;
 }
 
 /** What createApp builds. */
@@ -64,6 +67,8 @@ export interface BuiltApp {
   services: Services;
   /** Not composing until `start`; boot starts it after listen and disposes it on shutdown. */
   unified: UnifiedGatewayService;
+  /** The proxy's subscription streams; shutdown closes them at the drain deadline. */
+  streams: StreamProxy;
 }
 
 /**
@@ -84,13 +89,13 @@ function graphqlRequestOf(body: unknown): GraphQLRequest | null {
 
 /**
  * Builds the Express app: /graphql for the web app, /mcp for agents, /unified/graphql for the unified API, /proxy
- * to the upstreams, the compiled module code, /healthz, the discovery documents, and the built web app when there is
- * one. It does not listen.
+ * to the upstreams (subscriptions streamed over SSE), the compiled module code, /healthz, the discovery documents, and
+ * the built web app when there is one. It does not listen.
  *
  * @param deps - The database, the MCP key, and any services a test replaces.
  * @returns The app, the services it was built with, and the unified gateway.
  */
-export function createApp({ db, mcpKey, checkDatabase, dist, ...deps }: AppDeps): BuiltApp {
+export function createApp({ db, mcpKey, checkDatabase, dist, subscriptions, ...deps }: AppDeps): BuiltApp {
   const fetchDeps = deps.fetch ? { fetch: deps.fetch } : {};
   // Upstream changes are followed in subscription order: concepts follow renames and wiring moves overrides first,
   // then the gateway recomposes.
@@ -135,6 +140,8 @@ export function createApp({ db, mcpKey, checkDatabase, dist, ...deps }: AppDeps)
     unified,
   };
 
+  const streams = createStreamProxy(upstreams, { ...subscriptionSettings(), ...subscriptions });
+
   const yoga = createYoga<object, Context>({
     schema: buildSchema(),
     graphqlEndpoint: GRAPHQL_ENDPOINT,
@@ -159,11 +166,16 @@ export function createApp({ db, mcpKey, checkDatabase, dist, ...deps }: AppDeps)
   app.all(UNIFIED_ENDPOINT, unified.handler);
   app.all(MCP_ENDPOINT, json, createMcpHandler(services, { key: mcpKey, version: version() }));
 
-  // The browser's door to an upstream. Every document is checked against the cached schema first.
+  // The browser's door to an upstream. Every document is checked against the cached schema first. A subscription
+  // that asks for `text/event-stream` streams; a query or a mutation is answered once, as JSON, whatever it accepts.
   app.post('/proxy/:upstreamId', json, async (req, res) => {
     const request = graphqlRequestOf(req.body);
     if (request === null) {
       res.status(HttpStatus.BadRequest).json({ errors: [{ message: 'Send JSON with a "query" string.' }] });
+      return;
+    }
+    if (isSubscriptionRequest(request) && wantsStream(req)) {
+      await streams.handle(req.params.upstreamId, request, res);
       return;
     }
     try {
@@ -191,5 +203,5 @@ export function createApp({ db, mcpKey, checkDatabase, dist, ...deps }: AppDeps)
     app.use(express.static(dist));
     app.get(WEB_ROUTES, (_req, res) => res.sendFile('index.html', { root: dist }));
   }
-  return { app, services, unified };
+  return { app, services, unified, streams };
 }

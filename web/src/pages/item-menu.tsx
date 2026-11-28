@@ -1,11 +1,13 @@
+import { useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Ellipsis, Trash2 } from '@/components/ui/icons';
 import { Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@/components/ui/menu';
-import { ArrowDown, ArrowUp, Columns3 } from '@/core/app-icons';
+import { ArrowDown, ArrowUp, Columns3, Maximize2 } from '@/core/app-icons';
 import { messageOf } from '@/lib/error-message';
 import { widthLabel } from './column-span.ts';
+import { fullPageLinkOf } from './full-page-link.tsx';
 import { ItemWidthDialog } from './item-width-dialog.tsx';
 import { type Item, type Page, useMoveItem, useRemoveItem } from './use-pages.ts';
 
@@ -18,8 +20,10 @@ interface ItemMenuProps {
   onProblem: (problem: string) => void;
 }
 
-/** The ⋯ menu on an item in edit mode: its width, move earlier or later, remove. */
+/** The ⋯ menu on an item in edit mode: open it full page, its width, move earlier or later, remove. */
 export function ItemMenu({ page, item, index, onProblem }: ItemMenuProps) {
+  // The page's search params hold the module's path, which the full-page view opens at.
+  const search: Record<string, unknown> = useSearch({ strict: false });
   const moveItem = useMoveItem();
   const removeItem = useRemoveItem();
   const [isConfirmingRemove, setIsConfirmingRemove] = useState(false);
@@ -54,6 +58,12 @@ export function ItemMenu({ page, item, index, onProblem }: ItemMenuProps) {
           <Button variant="ghost" size="icon-xs" aria-label={`Actions for ${name}`} iconSlot={<Ellipsis />} />
         </MenuTrigger>
         <MenuContent align="end">
+          <MenuItem
+            iconSlot={<Maximize2 />}
+            label="Open full page"
+            linkSlot={fullPageLinkOf(page.slug, item.id, search)}
+          />
+          <MenuSeparator />
           <MenuItem
             iconSlot={<Columns3 />}
             label={`Width (${widthLabel(item).toLowerCase()})…`}

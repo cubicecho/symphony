@@ -23,7 +23,7 @@ await opened.migrate();
 console.log(`[db] ${opened.isPostgres ? 'Postgres' : 'PGlite'} at ${opened.location}`);
 
 const key = mcpKey();
-const { app, unified } = createApp({
+const { app, unified, streams } = createApp({
   db: opened.db,
   mcpKey: key,
   checkDatabase: () => opened.db.execute(sql`select 1`),
@@ -45,9 +45,11 @@ const server = app.listen(port(), host(), () => {
 });
 // The first composition runs in the background; /unified/graphql answers 503 until it succeeds.
 unified.start();
+// Open subscription streams keep their connections until the drain deadline, then close both sides.
 stopOnSignals(server, {
   // First, so the goodbye goes out while the server can still answer.
   before: () => advertiser.close(),
+  cutOff: () => streams.closeAll(),
   after: async () => {
     await unified.dispose();
     await opened.close();

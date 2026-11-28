@@ -1,5 +1,5 @@
 // Runs before anything else at boot, and exits with a sentence when the configuration can't work.
-import { databaseUrl, dbConnectTimeoutMs, lanAdvertise, POSTGRES_URL, port } from './config.ts';
+import { databaseUrl, dbConnectTimeoutMs, lanAdvertise, POSTGRES_URL, port, subscriptionSettings } from './config.ts';
 import { errorMessage } from './errors.ts';
 
 const MAX_PORT = 65_535;
@@ -25,6 +25,11 @@ function problems(): string[] {
     lanAdvertise();
   } catch (error) {
     found.push(`LAN_ADVERTISE: ${errorMessage(error)}`);
+  }
+  try {
+    subscriptionSettings();
+  } catch (error) {
+    found.push(errorMessage(error));
   }
   const url = databaseUrl();
   const isUsableUrl = url === '' || POSTGRES_URL.test(url);

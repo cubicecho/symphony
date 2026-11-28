@@ -64,18 +64,169 @@ export default function RecentOrders() {
    A document for another of its upstreams is tagged `gql.from('<name>')`, with the upstream's name as a
    string literal, so the compiler knows which schema to check it against. A name the module does not
    list is an error.
-5. **TypeScript syntax is allowed but not type-checked yet.** Types are stripped, so a wrong type
+5. **Every `RouteLink to` and `navigate` path the compiler can read matches a route** in the module's
+   `<Routes routes={{…}}>` (see "Routes inside a module"). A string literal is checked as it is; in a template
+   literal each `${…}` stands for one `:param` segment, so encode the value in it (`${encodeURIComponent(id)}`). A
+   path held in a variable is not checked.
+6. **TypeScript syntax is allowed but not type-checked yet.** Types are stripped, so a wrong type
    compiles. Read the schema (`get_schema`) for the real field names and types.
 
 ## The `symphony` runtime
 
-| Export        | Signature                                                                                                                                                                         | What it does                                                                                                                                                                                                         |
-| ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gql`         | ``gql`…` → string``, ``gql.from('<upstream>')`…` → document``                                                                                                                     | Marks a GraphQL document so the compiler finds and validates it. `gql` returns the text, for the default upstream; `gql.from` returns a document for the named upstream, which the hooks send there.                 |
-| `useQuery`    | `useQuery<T>(document, { variables?, refetchIntervalSeconds?, enabled? }?)` → `{ data: T \| undefined, error: Error \| null, isLoading, isPending, isError: boolean, refetch() }` | Runs a query against the document's upstream. Cached per document and variables. The result can be passed straight to `LoadState`'s `query`, which draws loading and failure and renders nothing once data is there. |
-| `useMutation` | `useMutation<T, V>(document)` → `{ mutate(variables?: V): Promise<T>, data: T \| undefined, error: Error \| null, isPending: boolean }`                                           | Runs a mutation against the document's upstream. When it succeeds, every query of this module is fetched again.                                                                                                      |
+| Export            | Signature                                                                                                                                                                         | What it does                                                                                                                                                                                                                                                                   |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `gql`             | ``gql`…` → string``, ``gql.from('<upstream>')`…` → document``                                                                                                                     | Marks a GraphQL document so the compiler finds and validates it. `gql` returns the text, for the default upstream; `gql.from` returns a document for the named upstream, which the hooks send there.                                                                           |
+| `useQuery`        | `useQuery<T>(document, { variables?, refetchIntervalSeconds?, enabled? }?)` → `{ data: T \| undefined, error: Error \| null, isLoading, isPending, isError: boolean, refetch() }` | Runs a query against the document's upstream. Cached per document and variables. The result can be passed straight to `LoadState`'s `query`, which draws loading and failure and renders nothing once data is there.                                                           |
+| `useMutation`     | `useMutation<T, V>(document)` → `{ mutate(variables?: V): Promise<T>, data: T \| undefined, error: Error \| null, isPending: boolean }`                                           | Runs a mutation against the document's upstream. When it succeeds, every query of this module is fetched again.                                                                                                                                                                |
+| `useSubscription` | `useSubscription<T>(document, { variables?, enabled?, maxEvents?, onEvent? }?)` → `{ events: T[], latest: T \| undefined, status, error: Error \| null }`                         | Follows a subscription on the document's upstream. `events` holds the `data` of the latest `maxEvents` (default 100) events, oldest first; `onEvent(data)` is called as each arrives. `status` is `'idle'` (not enabled), `'connecting'`, `'open'`, `'complete'` or `'error'`. |
+| `Routes`          | `<Routes routes={{ '/': () => …, '/orders/:id': () => … }} fallback?={() => …} />`                                                                                                | Draws the route the module's path is on. `:name` segments are parameters; a literal segment wins over a parameter. A path no route matches draws `fallback`, or a line saying so with a link back to `/`.                                                                      |
+| `RouteLink`       | `<RouteLink to="/orders/o3" …anchor props>`                                                                                                                                       | A link to a path in the module, as an `<a>`: a plain click goes there in place, a modified one opens a new tab. Fits a cubeui `linkSlot`.                                                                                                                                      |
+| `useRoute`        | `useRoute()` → `{ path: string, params: Record<string, string>, navigate(path: string) }`                                                                                         | Where the module is. `params` holds the matched route's `:param` values (empty outside `Routes`); `navigate` goes to another path.                                                                                                                                             |
 
 An upstream's GraphQL errors arrive as `error`, with the upstream's messages joined.
+
+## Following something live
+
+A `subscription` document goes through `useSubscription`, never `useQuery`. The stream opens when the module
+mounts, closes when it unmounts or its variables change, and completes when the upstream completes it.
+
+```tsx
+import { gql, useQuery, useSubscription } from 'symphony';
+
+const RUNS = gql`
+  query Runs {
+    runs {
+      id
+      status
+    }
+  }
+`;
+
+const EVENTS = gql`
+  subscription RunEvents($runId: String!) {
+    runEvents(runId: $runId) {
+      seq
+      kind
+      text
+    }
+  }
+`;
+
+interface RunEvent {
+  seq: number;
+  kind: string;
+  text: string;
+}
+
+function RunLog({ runId }: { runId: string | null }) {
+  const runs = useQuery(RUNS);
+  const { events, status, error } = useSubscription<{ runEvents: RunEvent }>(EVENTS, {
+    variables: { runId },
+    enabled: runId !== null,
+    // Fetch the run list again once the run says it is done.
+    onEvent: (data) => {
+      if (data.runEvents.kind === 'end') {
+        runs.refetch();
+      }
+    },
+  });
+  // …render events.map((event) => event.runEvents.text), and status
+}
+```
+
+- **Reconnects.** A dropped stream reconnects with backoff (1 s, doubling up to 30 s) and `status` goes back to
+  `'connecting'` with the reason in `error`. The wait starts over only once an event arrives. One the upstream
+  completed (`'complete'`) or Symphony refused (`'error'`, for an invalid document, say) is not tried again.
+- **Events are kept across a reconnect.** An upstream that replays what it said so far (like `runEvents`) sends
+  those events again after one, so key what you render by a field such as `seq`. `maxEvents: 0` keeps none, for a
+  module that only reads `latest` or `onEvent`; a negative or fractional `maxEvents` is an `'error'`.
+- **An event's GraphQL errors** arrive as `error` without closing the stream. So does a throw in `onEvent`.
+- **Only a subscription streams.** The runtime asks for `text/event-stream`; a query or mutation is always answered
+  once, as JSON, whatever the request accepts.
+- **Limits.** Symphony closes a stream that has had no event for a while (5 minutes by default; the module then
+  reconnects), refuses one over its stream limits, and ends one whose event is too large.
+- **Not through `unified`.** The built-in unified API doesn't stream subscriptions yet: tag the document
+  `gql.from('<upstream>')` for the upstream that serves the field.
+- **Agents can't subscribe.** `run_query` refuses subscription documents. To see the same data, run the upstream's
+  snapshot query, one that returns what happened so far (Task Server's `run_events(runId, afterSeq)`).
+
+### Long-running mutations: start, then subscribe
+
+A query or mutation through the proxy has 30 seconds to answer. A mutation that only answers when a long job
+ends (a run, an import) outlasts that. Start the job with a mutation that returns at once, with the job's id,
+then follow it with its subscription:
+
+```tsx
+const START = gql`mutation Start($task: String!) { startRun(task: $task) { id } }`;
+
+const start = useMutation<{ startRun: { id: string } }>(START);
+const [runId, setRunId] = useState<string | null>(null);
+const { latest } = useSubscription<{ runEvents: RunEvent }>(EVENTS, { variables: { runId }, enabled: runId !== null });
+// onClick: setRunId((await start.mutate({ task })).startRun.id)
+```
+
+## Routes inside a module
+
+A module that is more than one view (a list that opens a detail, tabs) gives each view a path inside the
+module, instead of switching with its own state. Back and forward then work, a subpage can be linked to, and a
+reload keeps it.
+
+```tsx
+import { gql, RouteLink, Routes, useQuery, useRoute } from 'symphony';
+import { Button } from '@/components/ui/button';
+
+const ORDERS = gql`
+  query Orders {
+    orders(first: 20) {
+      id
+      total
+    }
+  }
+`;
+
+function OrderList() {
+  const orders = useQuery<{ orders: { id: string; total: number }[] }>(ORDERS);
+  return (
+    <ul>
+      {orders.data?.orders.map((order) => (
+        <li key={order.id}>
+          <RouteLink to={`/orders/${encodeURIComponent(order.id)}`}>{order.total}</RouteLink>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function OrderDetail() {
+  const { params } = useRoute();
+  // …query the order params.id
+  return <Button variant="outline" content="All orders" linkSlot={<RouteLink to="/" />} />;
+}
+
+export default function Orders() {
+  return <Routes routes={{ '/': () => <OrderList />, '/orders/:id': () => <OrderDetail /> }} />;
+}
+```
+
+- **Paths are the module's own**, from its root `/`, which is where it starts. They start with `/`; a route
+  segment `:name` is a parameter, read from `useRoute().params.name`.
+- **Encode every value you put in a path.** Write `` `/orders/${encodeURIComponent(order.id)}` ``, never the raw
+  value: an id with a `/`, a `%` or a space in it would otherwise make another path, or none. `params` hands the
+  value back decoded. Neither `RouteLink` nor `navigate` encodes for you, since they can't tell a value from the
+  path around it.
+- **Where the path lives.** On a page, each placed module's path is in the page URL under its item:
+  `/pages/home?m.<itemId>=/orders/o3`, so several modules can each be on their own subpage. A module opened full
+  page (the button in its corner, or the item's ⋯ menu, "Open full page") has it in the URL's path:
+  `/pages/home/items/<itemId>/orders/o3`, and the way back keeps the page's other modules where they were.
+  In the editor's preview the path is kept in memory, and the editor's URL is left alone; a preview link opened in
+  a new tab starts that tab's preview at its path.
+- **The compiler checks literal paths.** `<RouteLink to="/ordrs/o3">` or `navigate('/ordrs/o3')` that
+  matches no route is a ROUTES error at its line. Declare the table in place, or as a `const` object the
+  `routes` prop names, so the compiler can read it. A table it can't read (a spread, a computed key, a call)
+  leaves the paths unchecked. Only the `navigate` from `useRoute()` is checked, not another function by that name.
+- **Each subpage gets a fresh view.** A route's view is called as a component, so it may use hooks, and it starts
+  again whenever the path changes: `/orders/o1` then `/orders/o2` keeps no state from the first order.
+- **A subpage that throws** shows the module's failure until the path changes, so Back brings the module back.
 
 ## More than one upstream
 

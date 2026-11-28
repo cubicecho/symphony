@@ -10,6 +10,8 @@ export const CompileStage = {
   Imports: 'IMPORTS',
   /** A `gql` document does not parse, does not validate against its upstream's schema, or names no upstream of the module. */
   Graphql: 'GRAPHQL',
+  /** A literal `RouteLink to` or `navigate` path matches no route the module's `Routes` declare, or is not a path. */
+  Routes: 'ROUTES',
   /** esbuild could not turn it into browser code. */
   Transform: 'TRANSFORM',
 } as const;

@@ -59,6 +59,7 @@ function createWorld(upstreams: Upstream[]) {
     update: unused,
     remove: unused,
     refresh: unused,
+    subscribe: unused,
     execute: async () => ({ data: null }),
   };
   const concepts: ConceptService = { list: async () => [], find: unused, save: unused, remove: unused };

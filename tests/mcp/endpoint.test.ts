@@ -200,6 +200,17 @@ describe('/mcp', () => {
     expect(running.calls.executed).toEqual([{ id: 'u1', query: '{ orders { id } }' }]);
   });
 
+  it('refuses a subscription, pointing at a snapshot query', async () => {
+    const executedBefore = running.calls.executed.length;
+    const result = await client.callTool({
+      name: 'run_query',
+      arguments: { upstream: FAKE_UPSTREAM, query: 'subscription Watch { orderShipped { id } }' },
+    });
+    expect(result.isError).toBe(true);
+    expect(textOf(result)).toMatch(/can't run a subscription.*run_events\(runId, afterSeq\)/s);
+    expect(running.calls.executed).toHaveLength(executedBefore);
+  });
+
   it('lists components and gives their docs', async () => {
     const components = JSON.parse(textOf(await client.callTool({ name: 'list_components', arguments: {} })));
     expect(components).toEqual(

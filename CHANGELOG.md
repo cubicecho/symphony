@@ -1,3 +1,27 @@
+# [1.2.0](https://github.com/cubicecho/symphony/compare/v1.1.0...v1.2.0) (2026-11-28)
+
+### Bug Fixes
+
+* **compile:** resolve route names through Babel scopes ([ed51237](https://github.com/cubicecho/symphony/commit/ed51237faa8df3c6e0dc21fb8567bb3774668e19))
+* **config:** require positive whole numbers for the SUBSCRIPTION_* limits ([edd0807](https://github.com/cubicecho/symphony/commit/edd08079a4e91a5750b6b31011466c642f50ed71)), closes [#6](https://github.com/cubicecho/symphony/issues/6)
+* **proxy:** route streams on the operation, and close them cleanly ([a20edcd](https://github.com/cubicecho/symphony/commit/a20edcd53c0e68509bb85d31770e47822b2e4685)), closes [#6](https://github.com/cubicecho/symphony/issues/6)
+* **runtime:** give each subpage a fresh route view ([8de1fec](https://github.com/cubicecho/symphony/commit/8de1fec98bbd2caf662c6c29ff95d0c1ffd70979))
+* **runtime:** keep useSubscription's backoff, limit and callback sound ([9985d46](https://github.com/cubicecho/symphony/commit/9985d46984623be00333a57ef5632e3ac1e14991)), closes [#6](https://github.com/cubicecho/symphony/issues/6)
+* **web:** clear a module's failure when its path changes ([993f37f](https://github.com/cubicecho/symphony/commit/993f37f31e8fe76554fca70c09abe690b60e8c9d))
+* **web:** keep the page's other module paths through a full-page visit ([cbead61](https://github.com/cubicecho/symphony/commit/cbead61859af5039991aba072415a73ad51c40ed))
+* **web:** make item paths from the URL start with a slash ([618c7df](https://github.com/cubicecho/symphony/commit/618c7df0bc1db89b7197cf95756c48da438ba66d))
+* **web:** start an editor preview at the path its link opened ([73da83c](https://github.com/cubicecho/symphony/commit/73da83ca399fc2cdc3dfad5ed6ba9b15791a3fc1))
+
+### Features
+
+* **compile:** check literal route paths against the module's Routes ([da4089a](https://github.com/cubicecho/symphony/commit/da4089a8a844b25b0f3e1d235c2e86f7f6d56ee3))
+* **mcp:** refuse subscriptions in run_query ([2728d3f](https://github.com/cubicecho/symphony/commit/2728d3fce9eed645bdd42c343bc12a58289fba79)), closes [#6](https://github.com/cubicecho/symphony/issues/6)
+* **proxy:** stream subscriptions over SSE ([db07922](https://github.com/cubicecho/symphony/commit/db07922330af82cacfd30f99f399b94bc1396eb8)), closes [#6](https://github.com/cubicecho/symphony/issues/6)
+* **runtime:** add Routes, RouteLink and useRoute to the module runtime ([bd36b70](https://github.com/cubicecho/symphony/commit/bd36b70564ca65ef428c24716156f7d8a52a0dc4))
+* **runtime:** add useSubscription to the module runtime ([638ddc8](https://github.com/cubicecho/symphony/commit/638ddc864511bfa7a6757ad5754957f37fa80e99)), closes [#6](https://github.com/cubicecho/symphony/issues/6)
+* **web:** open a module full page outside edit mode ([fbf3dca](https://github.com/cubicecho/symphony/commit/fbf3dcaa5c2a0e5f919d4b508aa6b93bacc8b5a3))
+* **web:** open a placed module full page ([3030e88](https://github.com/cubicecho/symphony/commit/3030e88f73411a8be9f44b0eaafca7c35635b2bc))
+
 # [1.1.0](https://github.com/cubicecho/symphony/compare/v1.0.0...v1.1.0) (2026-11-27)
 
 ### Bug Fixes

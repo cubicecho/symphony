@@ -9,5 +9,6 @@ export {
   ExternalLink,
   House,
   LayoutGrid,
+  Maximize2,
   Music,
 } from 'lucide-react';
