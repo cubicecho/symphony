@@ -106,6 +106,7 @@ export function createFakeServices(
   const concepts = new Map<string, ConceptRecord>();
   const proposals = new Map<string, ConceptProposalRecord>();
   const services: Services = {
+    lanUpstreams: { enabled: () => false, list: async () => [], add: unused },
     upstreams: {
       list: async () => upstreams,
       find,

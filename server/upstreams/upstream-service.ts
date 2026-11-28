@@ -100,7 +100,12 @@ function cleanInput(input: UpstreamInput): UpstreamInput {
   if (badHeader !== undefined) {
     throw badInput(`"${badHeader.name}" is not a valid header name.`);
   }
-  return { name, url: url.toString(), headers };
+  const clean: UpstreamInput = { name, url: url.toString(), headers };
+  // Left out, an update keeps the stored key; only a caller that names it changes it.
+  if (input.discoveredKey !== undefined) {
+    clean.discoveredKey = input.discoveredKey;
+  }
+  return clean;
 }
 
 /**
@@ -354,6 +359,7 @@ export function createUpstreamService(
       name: row.name,
       url: row.url,
       headers: row.headers,
+      discoveredKey: row.discoveredKey,
       schema: schemaRow === undefined ? null : cachedSchemaOf(schemaRow),
     };
   };
@@ -577,6 +583,12 @@ export function createUpstreamService(
     update: async (id, input) => {
       const existing = await requireRow(id);
       const clean = cleanInput(input);
+      // A linked upstream follows its API around the network; a URL typed by hand ends that, or the next sighting
+      // would put the old one back.
+      const isMovedByHand = clean.discoveredKey === undefined && clean.url !== existing.url;
+      if (isMovedByHand) {
+        clean.discoveredKey = null;
+      }
       let updated: Upstream;
       try {
         const [row] = await db.update(upstreams).set(clean).where(eq(upstreams.id, existing.id)).returning();

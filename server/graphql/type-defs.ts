@@ -38,6 +38,53 @@ export const TYPE_DEFS = /* GraphQL */ `
     proxyPath: String!
     "True for the built-in unified API (named unified): its schema is the composed one, and it can't be edited, refreshed or deleted."
     builtIn: Boolean!
+    "The LAN discovery key it was added from, while it follows that API's URL. Null for one added by hand, or once its URL was changed by hand."
+    discoveredKey: String
+  }
+
+  "Where a GraphQL API found on the LAN stands, as an upstream."
+  enum DiscoveredUpstreamState {
+    "Not added yet, and nothing has to be supplied first."
+    NEW
+    "Not added yet; it needs a header only the operator can give, such as a token."
+    NEEDS_TOKEN
+    "Added, and still on the network."
+    LINKED
+    "It left the network. An upstream added from it is kept."
+    OFFLINE
+  }
+
+  "A GraphQL API another machine advertises on the LAN (_graphql._tcp), offered as an upstream."
+  type DiscoveredUpstream {
+    "Unique on the network: <mDNS instance>/<service name>."
+    key: ID!
+    "The service's reverse-DNS name."
+    serviceName: String!
+    title: String
+    description: String
+    "The GraphQL endpoint."
+    url: String!
+    "Headers the API says a client must send. Their values are never advertised."
+    requiredHeaders: [String!]!
+    "The mDNS instance that advertised it."
+    host: String!
+    state: DiscoveredUpstreamState!
+    "The upstream added from it, or null."
+    upstream: Upstream
+  }
+
+  "LAN discovery: whether it is on, and what it has found since boot."
+  type LanDiscovery {
+    "False unless the server runs with LAN_DISCOVER=true."
+    enabled: Boolean!
+    upstreams: [DiscoveredUpstream!]!
+  }
+
+  input AddDiscoveredUpstreamInput {
+    key: ID!
+    name: String!
+    "Every required header needs a value."
+    headers: [HeaderInput!]!
   }
 
   input AddUpstreamInput {
@@ -322,6 +369,7 @@ export const TYPE_DEFS = /* GraphQL */ `
     "The effective wiring of every source that has any."
     sourceWiring: [SourceWiring!]!
     unifiedStatus: UnifiedStatus!
+    lanDiscovery: LanDiscovery!
   }
 
   type Mutation {
@@ -332,6 +380,8 @@ export const TYPE_DEFS = /* GraphQL */ `
     deleteUpstream(id: ID!): Boolean!
     "Introspects the upstream again and replaces its cached schema."
     refreshSchema(id: ID!): Upstream!
+    "Adds an API found on the LAN as an upstream, at the URL it advertises. It then follows that API if it moves."
+    addDiscoveredUpstream(input: AddDiscoveredUpstreamInput!): Upstream!
     "Creates or replaces a module and compiles it. A module that fails to compile is still saved, with its errors."
     saveModule(input: SaveModuleInput!): Module!
     deleteModule(id: ID!): Boolean!

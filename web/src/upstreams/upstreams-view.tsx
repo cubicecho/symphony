@@ -4,6 +4,7 @@ import { List } from '@/components/list';
 import { ListItem } from '@/components/list-item';
 import { LoadState } from '@/components/load-state';
 import { PageLayout } from '@/components/page-layout';
+import { Section } from '@/components/section';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
@@ -14,11 +15,19 @@ import { ProblemAlert } from '@/core/problem-alert';
 import { messageOf } from '@/lib/error-message';
 import { SchemaDialog } from './schema-dialog.tsx';
 import { UpstreamDialog } from './upstream-dialog.tsx';
-import { type Upstream, useDeleteUpstream, useRefreshSchema, useUpstreams } from './use-upstreams.ts';
+import {
+  type DiscoveredUpstream,
+  type Upstream,
+  useDeleteUpstream,
+  useLanDiscovery,
+  useRefreshSchema,
+  useUpstreams,
+} from './use-upstreams.ts';
 
 /** Which dialog the screen has open, fresh each time by its session. */
 type OpenDialog =
   | { kind: 'edit'; upstream: Upstream | undefined; session: number }
+  | { kind: 'discovered'; found: DiscoveredUpstream; session: number }
   | { kind: 'schema'; upstream: Upstream; session: number }
   | null;
 
@@ -38,7 +47,10 @@ export function UpstreamsView() {
    * @param next - Which one, without its session.
    */
   const openDialog = (
-    next: { kind: 'edit'; upstream: Upstream | undefined } | { kind: 'schema'; upstream: Upstream },
+    next:
+      | { kind: 'edit'; upstream: Upstream | undefined }
+      | { kind: 'discovered'; found: DiscoveredUpstream }
+      | { kind: 'schema'; upstream: Upstream },
   ) => {
     setSessions(sessions + 1);
     setDialog({ ...next, session: sessions + 1 });
@@ -106,16 +118,85 @@ export function UpstreamsView() {
                 ))}
               />
             )}
+            <OnYourNetwork onAdd={(found) => openDialog({ kind: 'discovered', found })} />
           </>
         }
       />
       {dialog?.kind === 'edit' ? (
         <UpstreamDialog key={dialog.session} open onOpenChange={onDialogOpenChange} upstream={dialog.upstream} />
       ) : null}
+      {dialog?.kind === 'discovered' ? (
+        <UpstreamDialog key={dialog.session} open onOpenChange={onDialogOpenChange} discovered={dialog.found} />
+      ) : null}
       {dialog?.kind === 'schema' ? (
         <SchemaDialog key={dialog.session} open onOpenChange={onDialogOpenChange} upstream={dialog.upstream} />
       ) : null}
     </>
+  );
+}
+
+/** How each state of a found API is shown. */
+const FOUND_BADGES = {
+  NEW: { label: 'New', variant: 'info-soft' },
+  NEEDS_TOKEN: { label: 'Needs a token', variant: 'warning-soft' },
+  LINKED: { label: 'Added', variant: 'positive-soft' },
+  OFFLINE: { label: 'Offline', variant: 'destructive-soft' },
+} as const satisfies Record<DiscoveredUpstream['state'], { label: string; variant: string }>;
+
+interface OnYourNetworkProps {
+  /** Opens the dialog that adds a found API. */
+  onAdd: (found: DiscoveredUpstream) => void;
+}
+
+/**
+ * The GraphQL APIs other machines advertise on the LAN, each with an Add. Drawn only while discovery is on
+ * (`LAN_DISCOVER=true`) and has found something.
+ */
+function OnYourNetwork({ onAdd }: OnYourNetworkProps) {
+  const query = useLanDiscovery();
+  const found = query.data?.upstreams ?? [];
+  const isShown = query.data?.enabled === true && found.length > 0;
+  if (isShown === false) {
+    return null;
+  }
+  return (
+    <Section
+      level={2}
+      title="On your network"
+      description="GraphQL APIs other machines advertise over mDNS. Adding one makes it an upstream that follows the API if its address changes."
+      contentSlot={
+        <List
+          label="Found on your network"
+          contentSlot={found.map((api) => <FoundRow key={api.key} found={api} onAdd={() => onAdd(api)} />)}
+        />
+      }
+    />
+  );
+}
+
+interface FoundRowProps {
+  found: DiscoveredUpstream;
+  onAdd: () => void;
+}
+
+/** One found API: what it calls itself, where it is, where it stands, and Add while it can be added. */
+function FoundRow({ found, onAdd }: FoundRowProps) {
+  const badge = FOUND_BADGES[found.state];
+  const canAdd = found.state === 'NEW' || found.state === 'NEEDS_TOKEN';
+  const linkedName = found.upstream?.name;
+  return (
+    <ListItem
+      title={found.title ?? found.serviceName}
+      description={
+        <span className="break-all">
+          {found.url} · {linkedName === undefined ? found.host : `added as ${linkedName}`}
+        </span>
+      }
+      meta={<Badge variant={badge.variant}>{badge.label}</Badge>}
+      actionSlot={
+        canAdd ? <Button size="sm" variant="outline" iconSlot={<Plus />} content="Add" onClick={onAdd} /> : null
+      }
+    />
   );
 }
 

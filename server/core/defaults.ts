@@ -27,10 +27,13 @@ export const HTTP_DEFAULTS: Readonly<HttpSettings> = Object.freeze({
 export interface DiscoverySettings {
   /** Whether the host is announced on the LAN over mDNS (`_mcp._tcp`). `LAN_ADVERTISE` overrides it. */
   lanAdvertise: boolean;
+  /** Whether Symphony watches the LAN for GraphQL APIs (`_graphql._tcp`) to offer as upstreams. `LAN_DISCOVER` overrides it. */
+  lanDiscover: boolean;
 }
 
 export const DISCOVERY_DEFAULTS: Readonly<DiscoverySettings> = Object.freeze({
   lanAdvertise: false,
+  lanDiscover: false,
 });
 
 /** Bounds on one operation against Symphony's own admin API. */
