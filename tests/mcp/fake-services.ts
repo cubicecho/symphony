@@ -113,6 +113,7 @@ export function createFakeServices(
       update: unused,
       remove: unused,
       refresh: unused,
+      subscribe: unused,
       execute: async (id, request) => {
         calls.executed.push({ id, query: request.query });
         return { data: { orders: [{ id: 'o3' }] } };

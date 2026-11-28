@@ -1,5 +1,5 @@
 // Runs before anything else at boot, and exits with a sentence when the configuration can't work.
-import { databaseUrl, dbConnectTimeoutMs, POSTGRES_URL, port } from './config.ts';
+import { databaseUrl, dbConnectTimeoutMs, POSTGRES_URL, port, subscriptionSettings } from './config.ts';
 import { errorMessage } from './errors.ts';
 
 const MAX_PORT = 65_535;
@@ -18,6 +18,11 @@ function problems(): string[] {
       found.push(`PORT must be between 1 and ${MAX_PORT}.`);
     }
     dbConnectTimeoutMs();
+  } catch (error) {
+    found.push(errorMessage(error));
+  }
+  try {
+    subscriptionSettings();
   } catch (error) {
     found.push(errorMessage(error));
   }

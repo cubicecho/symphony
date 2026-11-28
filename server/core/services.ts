@@ -117,7 +117,46 @@ export interface UpstreamService {
    * @throws NOT_FOUND when there is no such upstream.
    */
   execute(id: string, request: GraphQLRequest): Promise<GraphQLResponseBody>;
+  /**
+   * Validates one subscription against the cached schema, then opens it on the upstream over SSE with its headers.
+   *
+   * @param id - The upstream's id or name.
+   * @param request - The subscription.
+   * @param options - What ends the stream early, and the largest event read.
+   * @returns The open stream, or the refusal when validation refused it or the upstream would not stream. Like
+   * `execute`, it does not throw for those.
+   * @throws NOT_FOUND when there is no such upstream.
+   */
+  subscribe(id: string, request: GraphQLRequest, options: SubscribeOptions): Promise<UpstreamStream>;
 }
+
+/** What `UpstreamService.subscribe` takes besides the request. */
+export interface SubscribeOptions {
+  /** Aborting it closes the upstream connection. */
+  signal: AbortSignal;
+  /** The largest event read; a longer one ends the stream with an error. */
+  maxEventBytes: number;
+}
+
+/**
+ * A subscription the upstream is streaming. `events` yields each execution result and returns when the upstream
+ * completes. It throws UPSTREAM_FAILED when the upstream drops the connection without completing, sends an event over
+ * the limit, or `signal` aborts.
+ */
+export interface OpenStream {
+  isOpen: true;
+  events: AsyncIterable<GraphQLResponseBody>;
+}
+
+/** A subscription refused before any stream opened. */
+export interface RefusedStream {
+  isOpen: false;
+  /** The errors, as a GraphQL server answers them. */
+  body: GraphQLResponseBody;
+}
+
+/** What opening a subscription gives. */
+export type UpstreamStream = OpenStream | RefusedStream;
 
 /** A module's status. */
 export const ModuleStatus = {

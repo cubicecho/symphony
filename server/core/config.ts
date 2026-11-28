@@ -1,6 +1,12 @@
 // The environment, read in one place. Every getter falls back to a group in defaults.ts.
 import { readFileSync } from 'node:fs';
-import { DATABASE_DEFAULTS, HTTP_DEFAULTS, STORE_DEFAULTS } from './defaults.ts';
+import {
+  DATABASE_DEFAULTS,
+  HTTP_DEFAULTS,
+  STORE_DEFAULTS,
+  SUBSCRIPTION_DEFAULTS,
+  type SubscriptionSettings,
+} from './defaults.ts';
 
 /** A postgres:// (or postgresql://) URL. Anything else in DATABASE_URL is refused by preflight. */
 export const POSTGRES_URL = /^postgres(ql)?:\/\//;
@@ -20,6 +26,23 @@ function envInteger(raw: string | undefined, fallback: number): number {
   const value = Number(raw);
   if (Number.isInteger(value) === false) {
     throw new Error(`Expected a whole number, got "${raw}".`);
+  }
+  return value;
+}
+
+/**
+ * Reads a positive whole-number environment variable: a limit, where zero or less would make no sense.
+ *
+ * @param name - The variable's name, for the message.
+ * @param fallback - Used when it is unset or empty.
+ * @returns The number.
+ * @throws When it is set but is not a whole number above zero.
+ */
+function envPositiveInteger(name: string, fallback: number): number {
+  const raw = process.env[name];
+  const value = envInteger(raw, fallback);
+  if (value <= 0) {
+    throw new Error(`${name} must be a whole number above zero, got "${raw}".`);
   }
   return value;
 }
@@ -67,6 +90,29 @@ export function databaseUrl(): string {
  */
 export function dbConnectTimeoutMs(): number {
   return envInteger(process.env.DB_CONNECT_TIMEOUT_MS, DATABASE_DEFAULTS.connectTimeoutMs);
+}
+
+/**
+ * The proxy's subscription stream limits.
+ *
+ * @returns `SUBSCRIPTION_DEFAULTS`, with `SUBSCRIPTION_MAX_STREAMS`, `SUBSCRIPTION_MAX_STREAMS_PER_UPSTREAM`,
+ * `SUBSCRIPTION_IDLE_TIMEOUT_SECONDS` and `SUBSCRIPTION_MAX_EVENT_BYTES` over it where they are set.
+ * @throws When one of them is set but is not a whole number above zero. Preflight calls this, so boot stops.
+ */
+export function subscriptionSettings(): SubscriptionSettings {
+  return {
+    ...SUBSCRIPTION_DEFAULTS,
+    maxStreams: envPositiveInteger('SUBSCRIPTION_MAX_STREAMS', SUBSCRIPTION_DEFAULTS.maxStreams),
+    maxStreamsPerUpstream: envPositiveInteger(
+      'SUBSCRIPTION_MAX_STREAMS_PER_UPSTREAM',
+      SUBSCRIPTION_DEFAULTS.maxStreamsPerUpstream,
+    ),
+    idleTimeoutSeconds: envPositiveInteger(
+      'SUBSCRIPTION_IDLE_TIMEOUT_SECONDS',
+      SUBSCRIPTION_DEFAULTS.idleTimeoutSeconds,
+    ),
+    maxEventBytes: envPositiveInteger('SUBSCRIPTION_MAX_EVENT_BYTES', SUBSCRIPTION_DEFAULTS.maxEventBytes),
+  };
 }
 
 /**
