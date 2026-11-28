@@ -8,6 +8,9 @@ import { HttpStatus } from '../core/wire.ts';
 import { createSymphonyMcpServer } from './server.ts';
 import { LOG_TAG } from './tool-kit.ts';
 
+/** Where the endpoint is mounted. */
+export const MCP_ENDPOINT = '/mcp';
+
 /** What an Authorization header's value starts with. */
 const BEARER_PREFIX = 'Bearer ';
 

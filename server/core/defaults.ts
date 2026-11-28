@@ -23,6 +23,16 @@ export const HTTP_DEFAULTS: Readonly<HttpSettings> = Object.freeze({
   trustProxy: false,
 });
 
+/** How Symphony makes itself known to other machines (server/discovery/). */
+export interface DiscoverySettings {
+  /** Whether the host is announced on the LAN over mDNS (`_mcp._tcp`). `LAN_ADVERTISE` overrides it. */
+  lanAdvertise: boolean;
+}
+
+export const DISCOVERY_DEFAULTS: Readonly<DiscoverySettings> = Object.freeze({
+  lanAdvertise: false,
+});
+
 /** Bounds on one operation against Symphony's own admin API. */
 export interface OperationLimitSettings {
   /** Deepest selection allowed. */

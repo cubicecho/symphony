@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { discoveryMiddleware } from '@cubicecho/mcp-discovery';
 import express, { type Express } from 'express';
 import { createYoga } from 'graphql-yoga';
 import { createComponentCatalog } from '../catalog/catalog.ts';
@@ -17,6 +18,7 @@ import {
 } from '../core/services.ts';
 import { HttpStatus } from '../core/wire.ts';
 import type { Database } from '../db/client.ts';
+import { discoveryEndpoints } from '../discovery/endpoints.ts';
 import { createConceptService } from '../gateway/concept-service.ts';
 import { createProposalService } from '../gateway/proposal-service.ts';
 import { createUnifiedService, UNIFIED_ENDPOINT, type UnifiedGatewayService } from '../gateway/unified-service.ts';
@@ -25,7 +27,7 @@ import { createWiringService } from '../gateway/wiring-service.ts';
 import { graphqlLogger } from '../graphql/logger.ts';
 import { useOperationLimits } from '../graphql/operation-limits.ts';
 import { buildSchema, type Context } from '../graphql/schema.ts';
-import { createMcpHandler } from '../mcp/endpoint.ts';
+import { createMcpHandler, MCP_ENDPOINT } from '../mcp/endpoint.ts';
 import { createModuleService } from '../modules/module-service.ts';
 import { createPageService } from '../pages/page-service.ts';
 import { createUpstreamService, isSubscriptionRequest } from '../upstreams/upstream-service.ts';
@@ -33,7 +35,6 @@ import { healthHandler } from './health.ts';
 import { createStreamProxy, type StreamProxy, wantsStream } from './stream-proxy.ts';
 
 const GRAPHQL_ENDPOINT = '/graphql';
-const MCP_ENDPOINT = '/mcp';
 /** Every path but the server's own, so the web app's routes load index.html. */
 const WEB_ROUTES = /^(?!\/(graphql|healthz|mcp|unified\/graphql)$)(?!\/proxy\/|\/modules\/[^/]+\/[^/]+\.js$).*/;
 /** Where `npm run build` puts the web app. */
@@ -88,7 +89,8 @@ function graphqlRequestOf(body: unknown): GraphQLRequest | null {
 
 /**
  * Builds the Express app: /graphql for the web app, /mcp for agents, /unified/graphql for the unified API, /proxy
- * to the upstreams (subscriptions streamed over SSE), the compiled module code, /healthz, and the built web app when there is one. It does not listen.
+ * to the upstreams (subscriptions streamed over SSE), the compiled module code, /healthz, the discovery documents, and
+ * the built web app when there is one. It does not listen.
  *
  * @param deps - The database, the MCP key, and any services a test replaces.
  * @returns The app, the services it was built with, and the unified gateway.
@@ -155,6 +157,8 @@ export function createApp({ db, mcpKey, checkDatabase, dist, subscriptions, ...d
   const json = express.json({ limit: HTTP_DEFAULTS.bodyLimit });
 
   app.get('/healthz', healthHandler(checkDatabase));
+  // Public by design, so ahead of every door that asks for a key: the AI Catalog and the Server Card of /mcp.
+  app.use(discoveryMiddleware(() => discoveryEndpoints({ version: version() })));
   app.use(GRAPHQL_ENDPOINT, json);
   app.all(GRAPHQL_ENDPOINT, (req, res) => yoga(req, res));
   // Open like /graphql: both are the operator's, on the network Symphony listens on.
