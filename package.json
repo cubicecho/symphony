@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@babel/parser": "^8.1.3",
+    "@cubicecho/mcp-discovery": "^0.3.0",
     "@electric-sql/pglite": "^0.5.17",
     "@escape.tech/graphql-armor-max-aliases": "^2.6.2",
     "@escape.tech/graphql-armor-max-depth": "^2.4.2",
@@ -37,6 +38,7 @@
     "@graphql-tools/utils": "^13.2.3",
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@omnigraph/openapi": "0.112.7",
+    "bonjour-service": "^1.4.4",
     "date-fns": "^4.4.0",
     "drizzle-orm": "1.0.0-rc.5",
     "esbuild": "^0.28.2",

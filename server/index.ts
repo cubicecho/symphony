@@ -1,7 +1,9 @@
 // Boot only. Preflight is the first import: it exits with a sentence when the configuration is unusable.
 import './core/preflight.ts';
+import { hostname } from 'node:os';
+import { createAdvertiser } from '@cubicecho/mcp-discovery/mdns';
 import { sql } from 'drizzle-orm';
-import { databaseUrl, dataDir, dbConnectTimeoutMs, host, mcpKey, port, version } from './core/config.ts';
+import { databaseUrl, dataDir, dbConnectTimeoutMs, host, lanAdvertise, mcpKey, port, version } from './core/config.ts';
 import { errorMessage } from './core/errors.ts';
 import { openDatabase } from './db/client.ts';
 import { waitForDatabase } from './db/wait.ts';
@@ -27,15 +29,25 @@ const { app, unified } = createApp({
   checkDatabase: () => opened.db.execute(sql`select 1`),
   dist: WEB_DIST,
 });
+// Off unless LAN_ADVERTISE=true. The catalog and the card are served either way.
+const advertiser = createAdvertiser({
+  isWanted: lanAdvertise,
+  options: () => ({ name: `Symphony on ${hostname()}`, port: port() }),
+  log: (message) => console.log(`[discovery] ${message}`),
+});
 const server = app.listen(port(), host(), () => {
   console.log(`[server] symphony ${version()} ready at http://${host()}:${port()}`);
   if (key === '') {
     console.warn('[mcp] SYMPHONY_MCP_KEY is not set, so /mcp refuses every call. Set it in .env to let agents in.');
   }
+  // After listen, so a router that finds the announcement can already read the catalog.
+  void advertiser.sync();
 });
 // The first composition runs in the background; /unified/graphql answers 503 until it succeeds.
 unified.start();
 stopOnSignals(server, {
+  // First, so the goodbye goes out while the server can still answer.
+  before: () => advertiser.close(),
   after: async () => {
     await unified.dispose();
     await opened.close();

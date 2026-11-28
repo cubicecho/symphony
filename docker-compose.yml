@@ -32,6 +32,10 @@ services:
       - symphony_data:/data
     ports:
       - "${PORT:-3000}:3000"
+    # To advertise on the LAN over mDNS (LAN_ADVERTISE=true in .env), multicast has to reach the host's network,
+    # which the default bridge network drops. Replace `ports` with the line below; the app then listens on the host's
+    # port 3000 (change PORT under `environment` to move it):
+    # network_mode: host
 
   # postgres:
   #   image: postgres:17-alpine

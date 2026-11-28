@@ -51,6 +51,24 @@ decision, and the concept validator's problems. `submit_concept` stores a defini
 with the returned id until it passes), and a person accepts or rejects it over the admin API
 (`acceptConceptProposal`, `rejectConceptProposal`); accepting saves it as a concept.
 
+## Network discovery
+
+Symphony describes its MCP endpoint so other tools, such as
+[mcp-router](https://github.com/cubicecho/mcp-router), can find it without being given the URL:
+
+- `GET /.well-known/ai-catalog.json` is an [AI Catalog](https://github.com/Agent-Card/ai-catalog) listing `/mcp`.
+- `GET /mcp/server-card` is its [MCP Server Card](https://modelcontextprotocol.io/seps/2127-mcp-server-cards):
+  `io.github.cubicecho.symphony.<host>/modules`, with the URL the request came in on.
+
+Both are public, with no key needed. The card says `/mcp` needs an `Authorization` header (the key as a bearer
+token), but never carries the key. Both come from
+[`@cubicecho/mcp-discovery`](https://github.com/cubicecho/mcp-discovery).
+
+**Advertise on the local network** with `LAN_ADVERTISE=true` (off by default): Symphony then also announces itself
+over mDNS as an `_mcp._tcp` service once it is listening, so it can be found without knowing its address, and says
+goodbye on shutdown. mDNS needs multicast, which Docker's default bridge network drops: in a container, use
+`network_mode: host` (commented in `docker-compose.yml`) for the announcement to reach the LAN.
+
 ## Trust model (Phase 1)
 
 - **Single operator, self-hosted.** The web UI, the admin API at `/graphql` and the unified API at `/unified/graphql` have no sign-in. Only `/mcp` takes a key. Run Symphony on a network you trust.
@@ -68,6 +86,7 @@ server/   Express + graphql-yoga + drizzle (PGlite in DATA_DIR, or Postgres via 
   gateway/    the unified API: concept and wiring storage, field conflicts, composition, the hot-swapped gateway at
               /unified/graphql (docs/spike-gateway.md, "Concepts")
   mcp/        the agents' door (MCP SDK, stateless Streamable HTTP)
+  discovery/  the Server Card and AI Catalog entry for /mcp (@cubicecho/mcp-discovery)
   catalog/    cubeui component catalogue and docs (synced by `npm run catalog:sync`)
 web/      Vite + React + TanStack Router/Query + cubeui; web/src/modules is the module runtime and loader
 docs/     module-contract.md

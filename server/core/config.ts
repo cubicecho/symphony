@@ -1,6 +1,6 @@
 // The environment, read in one place. Every getter falls back to a group in defaults.ts.
 import { readFileSync } from 'node:fs';
-import { DATABASE_DEFAULTS, HTTP_DEFAULTS, STORE_DEFAULTS } from './defaults.ts';
+import { DATABASE_DEFAULTS, DISCOVERY_DEFAULTS, HTTP_DEFAULTS, STORE_DEFAULTS } from './defaults.ts';
 
 /** A postgres:// (or postgresql://) URL. Anything else in DATABASE_URL is refused by preflight. */
 export const POSTGRES_URL = /^postgres(ql)?:\/\//;
@@ -22,6 +22,25 @@ function envInteger(raw: string | undefined, fallback: number): number {
     throw new Error(`Expected a whole number, got "${raw}".`);
   }
   return value;
+}
+
+/**
+ * Reads a true/false environment variable.
+ *
+ * @param raw - The variable's value.
+ * @param fallback - Used when it is unset or empty.
+ * @returns The flag.
+ * @throws When it is set but is neither `true` nor `false`.
+ */
+function envBoolean(raw: string | undefined, fallback: boolean): boolean {
+  if (raw === undefined || raw === '') {
+    return fallback;
+  }
+  const isKnown = raw === 'true' || raw === 'false';
+  if (isKnown === false) {
+    throw new Error(`Expected true or false, got "${raw}".`);
+  }
+  return raw === 'true';
 }
 
 /**
@@ -76,6 +95,15 @@ export function dbConnectTimeoutMs(): number {
  */
 export function mcpKey(): string {
   return process.env.SYMPHONY_MCP_KEY ?? '';
+}
+
+/**
+ * Whether the host is announced on the LAN over mDNS.
+ *
+ * @returns `LAN_ADVERTISE`, or `DISCOVERY_DEFAULTS.lanAdvertise`.
+ */
+export function lanAdvertise(): boolean {
+  return envBoolean(process.env.LAN_ADVERTISE, DISCOVERY_DEFAULTS.lanAdvertise);
 }
 
 /**
