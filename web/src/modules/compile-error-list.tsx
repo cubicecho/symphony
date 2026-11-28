@@ -8,6 +8,7 @@ const STAGE_LABELS = {
   SOURCE: 'Source',
   IMPORTS: 'Imports',
   GRAPHQL: 'GraphQL',
+  ROUTES: 'Routes',
   TRANSFORM: 'Transform',
 } as const;
 

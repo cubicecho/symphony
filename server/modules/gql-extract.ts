@@ -49,8 +49,10 @@ export interface GqlUses {
   misuses: GqlMisuse[];
 }
 
-/** The local names `gql` is reachable by. */
-interface GqlBindings {
+/** The local names one of the runtime's exports is reachable by. */
+interface RuntimeBindings {
+  /** The export: `gql`, `Routes`. */
+  exportName: string;
   /** Names bound by `import { gql }` or `import { gql as g }`. */
   direct: Set<string>;
   /** Names bound by `import * as runtime`, used as `runtime.gql`. */
@@ -105,13 +107,14 @@ export function positionOf(node: Node): SourcePosition | null {
 }
 
 /**
- * Finds the local names a module imported `gql` from 'symphony' under.
+ * Finds the local names a module imported one of the runtime's exports from 'symphony' under.
  *
  * @param program - The parsed module.
+ * @param exportName - The export: `gql`, `Routes`.
  * @returns The direct and namespace bindings.
  */
-function gqlBindings(program: Program): GqlBindings {
-  const bindings: GqlBindings = { direct: new Set(), namespaces: new Set() };
+function runtimeBindings(program: Program, exportName: string): RuntimeBindings {
+  const bindings: RuntimeBindings = { exportName, direct: new Set(), namespaces: new Set() };
   for (const statement of program.body) {
     const isRuntimeImport = statement.type === 'ImportDeclaration' && statement.source.value === RUNTIME_SPECIFIER;
     if (isRuntimeImport) {
@@ -121,7 +124,7 @@ function gqlBindings(program: Program): GqlBindings {
         } else if (specifier.type === 'ImportSpecifier') {
           const imported =
             specifier.imported.type === 'Identifier' ? specifier.imported.name : specifier.imported.value;
-          if (imported === GQL_EXPORT) {
+          if (imported === exportName) {
             bindings.direct.add(specifier.local.name);
           }
         }
@@ -132,13 +135,13 @@ function gqlBindings(program: Program): GqlBindings {
 }
 
 /**
- * Tells whether an expression is the runtime's `gql`.
+ * Tells whether an expression is one of the runtime's exports.
  *
  * @param node - The expression.
- * @param bindings - The names `gql` was imported under.
+ * @param bindings - The names the export was imported under.
  * @returns True for `gql`, an aliased name, or `runtime.gql`.
  */
-function isGqlReference(node: Node, bindings: GqlBindings): boolean {
+function isRuntimeReference(node: Node, bindings: RuntimeBindings): boolean {
   if (node.type === 'Identifier') {
     return bindings.direct.has(node.name);
   }
@@ -148,7 +151,7 @@ function isGqlReference(node: Node, bindings: GqlBindings): boolean {
     node.object.type === 'Identifier' &&
     bindings.namespaces.has(node.object.name) &&
     node.property.type === 'Identifier' &&
-    node.property.name === GQL_EXPORT
+    node.property.name === bindings.exportName
   );
 }
 
@@ -159,14 +162,14 @@ function isGqlReference(node: Node, bindings: GqlBindings): boolean {
  * @param bindings - The names `gql` was imported under.
  * @returns True for `gql.from(…)`, on an aliased or namespaced `gql` too.
  */
-function isFromCall(node: CallExpression, bindings: GqlBindings): boolean {
+function isFromCall(node: CallExpression, bindings: RuntimeBindings): boolean {
   const { callee } = node;
   return (
     callee.type === 'MemberExpression' &&
     callee.computed === false &&
     callee.property.type === 'Identifier' &&
     callee.property.name === FROM_METHOD &&
-    isGqlReference(callee.object, bindings)
+    isRuntimeReference(callee.object, bindings)
   );
 }
 
@@ -190,7 +193,7 @@ function fromName(node: CallExpression): string | null {
  * tagged by some other `gql` is left out.
  */
 export function findGqlTemplates(program: Program): GqlUses {
-  const bindings = gqlBindings(program);
+  const bindings = runtimeBindings(program, GQL_EXPORT);
   const templates: GqlTemplate[] = [];
   const misuses: GqlMisuse[] = [];
   const tagCalls = new Set<Node>();
@@ -252,12 +255,12 @@ export function findGqlTemplates(program: Program): GqlUses {
  * @returns Null for a plain `gql`, the name for `gql.from('<name>')`, or undefined when the tag is something else
  * (a `gql.from` call without a string literal is something else too; it is reported as a misuse).
  */
-function tagUpstream(node: TaggedTemplateExpression, bindings: GqlBindings): string | null | undefined {
+function tagUpstream(node: TaggedTemplateExpression, bindings: RuntimeBindings): string | null | undefined {
   const { tag } = node;
   if (tag.type === 'CallExpression') {
     return isFromCall(tag, bindings) ? (fromName(tag) ?? undefined) : undefined;
   }
-  return isGqlReference(tag, bindings) ? null : undefined;
+  return isRuntimeReference(tag, bindings) ? null : undefined;
 }
 
 /**

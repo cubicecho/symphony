@@ -7,6 +7,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { messageOf } from '@/lib/error-message';
 import { loadModule } from './load-module.ts';
 import { ModuleContext, type ModuleScope, moduleScopeOf } from './module-context.ts';
+import { type ModuleRouter, ModuleRouterContext, useCardRouter } from './module-router.ts';
 
 /** The module a card draws, as the pages and the editor both hold it. */
 export interface ModuleCardModule {
@@ -27,13 +28,17 @@ export interface ModuleCardModule {
 
 interface ModuleCardProps {
   module: ModuleCardModule;
+  /** The page item it is drawn for: its path is kept in the page URL. Left out (the editor's preview), in memory. */
+  itemId?: string | undefined;
+  /** Where its path is kept instead, as the full-page view keeps it in its own URL. */
+  router?: ModuleRouter | undefined;
 }
 
 /**
  * One module, live: its compiled component loaded and drawn with its upstream's data. A module that
  * does not compile, fails to load or throws while drawing says so, by name, with a link to its editor.
  */
-export function ModuleCard({ module }: ModuleCardProps) {
+export function ModuleCard({ module, itemId, router }: ModuleCardProps) {
   const { codeUrl } = module;
   if (codeUrl === null) {
     return (
@@ -45,24 +50,27 @@ export function ModuleCard({ module }: ModuleCardProps) {
       />
     );
   }
-  return <LoadedModule module={module} codeUrl={codeUrl} />;
+  return <LoadedModule module={module} codeUrl={codeUrl} itemId={itemId} router={router} />;
 }
 
-interface LoadedModuleProps {
-  module: ModuleCardModule;
+interface LoadedModuleProps extends ModuleCardProps {
   /** The version's code, known to be there. */
   codeUrl: string;
 }
 
-/** Loads a compiled module and draws it inside its scope and an error boundary. */
-function LoadedModule({ module, codeUrl }: LoadedModuleProps) {
+/** Loads a compiled module and draws it inside its scope, its router and an error boundary. */
+function LoadedModule({ module, codeUrl, itemId, router }: LoadedModuleProps) {
   const query = useQuery({
     queryKey: ['module-code', codeUrl],
     queryFn: () => loadModule(codeUrl),
     // A code URL names one version, so what it loaded never changes.
     staleTime: Number.POSITIVE_INFINITY,
   });
-  const scope = useMemo<ModuleScope>(() => moduleScopeOf(module.id, module.upstreams), [module.id, module.upstreams]);
+  const scope = useMemo<ModuleScope>(
+    () => moduleScopeOf(module.id, module.upstreams, itemId),
+    [module.id, module.upstreams, itemId],
+  );
+  const cardRouter = useCardRouter(scope.itemId);
 
   if (query.isPending) {
     return <Skeleton className="h-32 w-full rounded-lg" aria-label={`Loading ${module.name}`} />;
@@ -71,10 +79,13 @@ function LoadedModule({ module, codeUrl }: LoadedModuleProps) {
     return <ModuleFailure module={module} message={messageOf(query.error) ?? 'It could not be loaded.'} />;
   }
   const Loaded = query.data;
+  const moduleRouter = router ?? cardRouter;
   return (
-    <ModuleErrorBoundary key={codeUrl} module={module}>
+    <ModuleErrorBoundary key={codeUrl} module={module} path={moduleRouter.path}>
       <ModuleContext.Provider value={scope}>
-        <Loaded />
+        <ModuleRouterContext.Provider value={moduleRouter}>
+          <Loaded />
+        </ModuleRouterContext.Provider>
       </ModuleContext.Provider>
     </ModuleErrorBoundary>
   );
@@ -118,6 +129,8 @@ function ModuleFailure({ module, message }: ModuleFailureProps) {
 
 interface ModuleErrorBoundaryProps {
   module: ModuleCardModule;
+  /** The module's path. A failure is cleared when it changes, so Back leaves a subpage that threw. */
+  path: string;
   /** The module's component, in its scope. React's error boundaries take their subject as children. */
   children: ReactNode;
 }
@@ -133,7 +146,7 @@ interface ModuleErrorBoundaryState {
  *
  * @remarks
  * A class, because React only offers error boundaries as classes. It is keyed by code URL where it is
- * used, so a new version of the module starts without the old one's error.
+ * used, so a new version of the module starts without the old one's error; a new path clears it too.
  */
 class ModuleErrorBoundary extends Component<ModuleErrorBoundaryProps, ModuleErrorBoundaryState> {
   state: ModuleErrorBoundaryState = { error: null, hasFailed: false };
@@ -156,6 +169,18 @@ class ModuleErrorBoundary extends Component<ModuleErrorBoundaryProps, ModuleErro
    */
   componentDidCatch(error: unknown, info: ErrorInfo): void {
     console.error(`Module "${this.props.module.name}" threw while drawing.`, error, info.componentStack);
+  }
+
+  /**
+   * Draws the module again once its path has moved on from the one that threw.
+   *
+   * @param previous - The props of the last render.
+   */
+  componentDidUpdate(previous: ModuleErrorBoundaryProps): void {
+    const hasMoved = previous.path !== this.props.path;
+    if (hasMoved && this.state.hasFailed) {
+      this.setState({ error: null, hasFailed: false });
+    }
   }
 
   /**
