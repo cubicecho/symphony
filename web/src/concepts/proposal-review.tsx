@@ -4,14 +4,15 @@ import { PageLayout } from '@/components/page-layout';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Check, X } from '@/components/ui/icons';
-import { countLabel, formatDateTime } from '@/core/format';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { messageOf } from '@/lib/error-message';
+import { formatCount, formatDateTime } from '@/lib/format';
 import { labelOf, SOURCE_LABELS } from './concept-proposals.ts';
 import { ConceptServableBadge } from './concept-servable-badge.tsx';
 import { type ConceptProblem, conceptProblemsOf } from './concept-summary.ts';
 import { DefinitionEditor } from './definition-editor.tsx';
 import { ProposalSourceBadge } from './proposal-source-badge.tsx';
-import { ProposalStatusBadge } from './proposal-status-badge.tsx';
+import { PROPOSAL_STATUSES } from './proposal-statuses.ts';
 import { RejectProposalDialog } from './reject-proposal-dialog.tsx';
 import { type ConceptProposal, useAcceptConceptProposal, useSubmitConceptProposal } from './use-concept-proposals.ts';
 
@@ -73,7 +74,7 @@ export function ProposalReview({ proposal }: ProposalReviewProps) {
         setAcceptError(
           located === null
             ? (messageOf(error) ?? 'It was not accepted. Try again.')
-            : `It has ${countLabel(located.length, 'problem', 'problems')}, listed below and in the summary.`,
+            : `It has ${formatCount(located.length, 'problem')}, listed below and in the summary.`,
         );
       },
     });
@@ -100,7 +101,7 @@ export function ProposalReview({ proposal }: ProposalReviewProps) {
         }
         actionSlot={
           <>
-            <ProposalStatusBadge status={proposal.status} />
+            <StatusBadge status={proposal.status} statuses={PROPOSAL_STATUSES} />
             <ProposalSourceBadge source={proposal.source} />
             {isPending ? <ConceptServableBadge servable={proposal.servable} kind="draft" /> : null}
             {isPending ? (

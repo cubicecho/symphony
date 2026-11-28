@@ -10,10 +10,11 @@ import { PageLayout } from '@/components/page-layout';
 import { Section } from '@/components/section';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Pencil, Sparkles, X } from '@/components/ui/icons';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { ToggleChip } from '@/components/ui/toggle-chip';
-import { countLabel } from '@/core/format';
 import { ProblemAlert } from '@/core/problem-alert';
 import { messageOf } from '@/lib/error-message';
+import { formatCount } from '@/lib/format';
 import { useUpstreams } from '@/upstreams/use-upstreams';
 import { ConceptProblemList } from './concept-problem-list.tsx';
 import {
@@ -26,8 +27,8 @@ import {
 import { ConceptServableBadge } from './concept-servable-badge.tsx';
 import { summarizeDefinition } from './concept-summary.ts';
 import { ConceptSummaryContent } from './concept-summary-card.tsx';
-import { ConfidenceBadge } from './confidence-badge.tsx';
 import { DefinitionEditor } from './definition-editor.tsx';
+import { CONFIDENCE_STATUSES } from './proposal-statuses.ts';
 import {
   type ConceptDraft,
   type NotReadyConcept,
@@ -257,10 +258,10 @@ function DraftRow({ draft, savedId, isSaving, onSave, onEdit }: DraftRowProps) {
   const summary = summarizeDefinition(draft.definition);
   const unsure = unsureReasonCount(draft.reasons);
   const facts = [
-    countLabel(summary.shared.length + summary.owned.length, 'field', 'fields'),
-    `${countLabel(summary.members.length, 'member', 'members')}: ${summary.members.map((member) => member.upstream).join(', ')}`,
+    formatCount(summary.shared.length + summary.owned.length, 'field'),
+    `${formatCount(summary.members.length, 'member')}: ${summary.members.map((member) => member.upstream).join(', ')}`,
     unsure === 0 ? null : `${unsure} to check`,
-    draft.problems.length === 0 ? null : countLabel(draft.problems.length, 'problem', 'problems'),
+    draft.problems.length === 0 ? null : formatCount(draft.problems.length, 'problem'),
   ].filter((fact) => fact !== null);
 
   return (
@@ -329,7 +330,7 @@ function ReasonsSection({ draft }: { draft: ConceptDraft }) {
                   <ul className="grid gap-1 pt-1">
                     {group.reasons.map((reason) => (
                       <li key={reason.reason} className="flex flex-wrap items-start gap-2 text-foreground/80 text-sm">
-                        <ConfidenceBadge confidence={reason.confidence} />
+                        <StatusBadge status={reason.confidence} statuses={CONFIDENCE_STATUSES} />
                         <span className="min-w-0 flex-1">{reason.reason}</span>
                       </li>
                     ))}

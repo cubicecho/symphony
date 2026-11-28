@@ -4,9 +4,9 @@ import { CardLayout } from '@/components/card-layout';
 import { Section } from '@/components/section';
 import { Alert } from '@/components/ui/alert';
 import { CodeBlock } from '@/components/ui/code';
-import { countLabel } from '@/core/format';
 import { onFormSubmit } from '@/core/forms';
 import { messageOf } from '@/lib/error-message';
+import { formatCount } from '@/lib/format';
 import type { SlotNode } from '@/lib/utils';
 import { ConceptProblemList } from './concept-problem-list.tsx';
 import {
@@ -107,7 +107,7 @@ export function DefinitionEditor({
           setServerError(messageOf(error) ?? 'It was not saved. Try again.');
         } else {
           setSaveProblems(located);
-          setServerError(`It has ${countLabel(located.length, 'problem', 'problems')}, listed below.`);
+          setServerError(`It has ${formatCount(located.length, 'problem')}, listed below.`);
         }
       }
     },

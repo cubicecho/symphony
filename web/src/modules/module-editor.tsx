@@ -9,6 +9,7 @@ import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { ArrowLeft, Server, Trash2 } from '@/components/ui/icons';
+import { StatusBadge } from '@/components/ui/status-badge';
 import type { TextareaHandle, TextareaSelection } from '@/components/ui/textarea-base';
 import { onFormSubmit } from '@/core/forms';
 import { ProblemAlert } from '@/core/problem-alert';
@@ -19,7 +20,7 @@ import { CompileErrorList } from './compile-error-list.tsx';
 import { EXAMPLE_SOURCE } from './example-source.ts';
 import { McpNote } from './mcp-note.tsx';
 import { ModuleCard } from './module-card.tsx';
-import { ModuleStatusBadge } from './module-status-badge.tsx';
+import { MODULE_STATUSES } from './module-statuses.ts';
 import { type ModuleDetail, useDeleteModule, useSaveModule } from './use-modules.ts';
 
 /** How tall the source box starts, in lines. */
@@ -271,7 +272,7 @@ export function ModuleEditor({ module }: ModuleEditorProps) {
         actionSlot={
           module === undefined ? null : (
             <>
-              <ModuleStatusBadge status={module.status} />
+              <StatusBadge status={module.status} statuses={MODULE_STATUSES} />
               <Button
                 size="sm"
                 variant="outline"

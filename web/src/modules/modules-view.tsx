@@ -6,9 +6,10 @@ import { LoadState } from '@/components/load-state';
 import { PageLayout } from '@/components/page-layout';
 import { Button } from '@/components/ui/button';
 import { Plus } from '@/components/ui/icons';
+import { StatusBadge } from '@/components/ui/status-badge';
 import { Blocks } from '@/core/app-icons';
 import { McpNote } from './mcp-note.tsx';
-import { ModuleStatusBadge } from './module-status-badge.tsx';
+import { MODULE_STATUSES } from './module-statuses.ts';
 import { type ModuleSummary, useModules } from './use-modules.ts';
 
 /**
@@ -60,7 +61,7 @@ export function ModulesView() {
                   description={[upstreamNames(module), module.description].filter((part) => part !== '').join(' · ')}
                   meta={
                     <span className="flex items-center gap-2">
-                      <ModuleStatusBadge status={module.status} />
+                      <StatusBadge status={module.status} statuses={MODULE_STATUSES} />
                       <span className="text-foreground/60 text-xs">v{module.version}</span>
                     </span>
                   }

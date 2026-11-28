@@ -4,7 +4,7 @@ import { EmptyState } from '@/components/empty-state';
 import { Section } from '@/components/section';
 import { Badge } from '@/components/ui/badge';
 import { CodeBlock } from '@/components/ui/code';
-import { countLabel } from '@/core/format';
+import { formatCount } from '@/lib/format';
 import { ConceptProblemList } from './concept-problem-list.tsx';
 import { CONCEPT_OPERATIONS, type ConceptProblem, type ConceptSummary, problemsAt } from './concept-summary.ts';
 
@@ -24,7 +24,7 @@ interface ConceptSummaryCardProps {
 function memberLine(owned: readonly string[], problemCount: number): string | undefined {
   const parts = [
     owned.length === 0 ? null : `Owns ${owned.join(', ')}`,
-    problemCount === 0 ? null : countLabel(problemCount, 'problem', 'problems'),
+    problemCount === 0 ? null : formatCount(problemCount, 'problem'),
   ].filter((part) => part !== null);
   return parts.length === 0 ? undefined : parts.join(' · ');
 }

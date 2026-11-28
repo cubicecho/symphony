@@ -4,9 +4,9 @@ import { PageLayout } from '@/components/page-layout';
 import { Alert } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
 import { ArrowLeft, Trash2 } from '@/components/ui/icons';
-import { countLabel } from '@/core/format';
 import { ProblemAlert } from '@/core/problem-alert';
 import { messageOf } from '@/lib/error-message';
+import { formatCount } from '@/lib/format';
 import { ConceptServableBadge } from './concept-servable-badge.tsx';
 import { summarizeDefinition } from './concept-summary.ts';
 import { DefinitionEditor } from './definition-editor.tsx';
@@ -78,7 +78,7 @@ export function ConceptEditor({ concept }: ConceptEditorProps) {
     <>
       <PageLayout
         title={concept?.name ?? 'New concept'}
-        description={concept === undefined ? undefined : `${countLabel(memberCount, 'member', 'members')}.`}
+        description={concept === undefined ? undefined : `${formatCount(memberCount, 'member')}.`}
         backSlot={
           <Button
             variant="ghost"
