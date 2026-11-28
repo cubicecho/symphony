@@ -1,3 +1,13 @@
+# [1.3.0](https://github.com/cubicecho/symphony/compare/v1.2.0...v1.3.0) (2026-11-28)
+
+### Bug Fixes
+
+* name the server card symphony instead of modules ([04efbe8](https://github.com/cubicecho/symphony/commit/04efbe8f620dc85245f4158b3b61a2467c42847d))
+
+### Features
+
+* advertise the MCP endpoint with mcp-discovery ([41061e8](https://github.com/cubicecho/symphony/commit/41061e8a5459a126fbb90272683eb517382bdbd9))
+
 # [1.2.0](https://github.com/cubicecho/symphony/compare/v1.1.0...v1.2.0) (2026-11-28)
 
 ### Bug Fixes
