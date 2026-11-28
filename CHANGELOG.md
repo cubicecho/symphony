@@ -1,3 +1,9 @@
+# [1.4.0](https://github.com/cubicecho/symphony/compare/v1.3.0...v1.4.0) (2026-11-28)
+
+### Features
+
+* find GraphQL APIs on the LAN and add them as upstreams ([#11](https://github.com/cubicecho/symphony/issues/11)) ([05b0491](https://github.com/cubicecho/symphony/commit/05b0491a17dbff4aeed866146479bc31a0cbfba7))
+
 # [1.3.0](https://github.com/cubicecho/symphony/compare/v1.2.0...v1.3.0) (2026-11-28)
 
 ### Bug Fixes
